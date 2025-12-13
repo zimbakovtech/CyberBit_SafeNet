@@ -24,13 +24,15 @@
   const GAME_HEIGHT = window.innerHeight;
 
   // Initialize Kaboom with fullscreen canvas and dark background
-  kaboom({
+  const k = kaboom({
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     background: [5, 5, 16],
     global: true,
     scale: 1,
   });
+
+  k.loadSprite("menu-bg", "assets/background.png");
 
   const PLAYER_SPEED = 120;
 
@@ -54,20 +56,195 @@
     MODAL: 100,
   };
 
-  const UI_PALETTE = {
+  // --- LOCALIZATION ---
+  const LOCALES = {
+    en: {
+      "menu.start": "START",
+      "menu.quit": "QUIT",
+      "menu.title": "CYBER BIT",
+      "menu.subtitle": "A Phishing Awareness Adventure",
+      "menu.tip": "Tip: Real attacks often feel urgent and unexpected.",
+      "menu.controls": "Press ENTER to Start   P: Progress Report",
+      "menu.cert": "Certificate Available! Press C",
+      "menu.lang": "Lang",
+      "menu.colorblind": "ColorBlind",
+      "ui.level": "Level",
+      "ui.allowance": "Allowance",
+      "ui.back": "ESC: Back",
+      "ui.restart": "R: Restart",
+      "ui.levelup": "LEVEL UP!",
+      "ui.goal": "Goal: Spot phishing on every device.",
+      "ui.controls.room": "Arrows: Move   SPACE: Inspect   R: Restart Room",
+      "ui.inspect": "SPACE: Inspect",
+      "ui.devices": "Devices",
+      "ui.no_alerts": "No alerts",
+      "ui.click_open": "Click an icon to open",
+      "ui.tap_open": "Tap an app to open",
+      "ui.no_new_alerts": "No new alerts in",
+      "ui.phone_hint": "Phone - Tap the app with a badge.",
+      "ui.esc_room": "ESC: Back to room",
+      "app.factcheck": "Fact Check",
+      "app.messages": "Messages",
+      "app.mail": "Mail",
+      "app.phone": "Phone",
+      "app.browser": "Browser",
+      "app.social": "Social",
+      "device.phone": "Phone",
+      "device.tablet": "Tablet",
+      "device.computer": "Computer",
+      "debrief.title": "Mission Debrief",
+      "debrief.quiz": "Quick Quiz",
+      "debrief.continue": "Continue",
+      "debrief.redflags": "RED FLAGS FOUND",
+      "debrief.reasoning": "Why did you choose this?",
+      "cert.title": "CERTIFICATE OF COMPLETION",
+      "cert.awarded": "Awarded to Agent",
+      "cert.msg": "For outstanding vigilance in cyber safety.",
+      "cert.return": "Press ESC to return",
+      "ending.hacked": "YOU GOT HACKED!",
+      "ending.safe": "SAFE!",
+      "ending.hacked_desc": "You fell for a phishing trick.",
+      "ending.safe_desc": "You correctly identified the phishing risk.",
+      "ending.device": "Device",
+      "ending.allowance_lost": "Because of this mistake, part of your allowance was lost.",
+      "ending.allowance_safe": "Good choices help you keep your allowance safe.",
+      "ending.controls": "ESC: Back to device/room   R: Restart room",
+      "fc.real": "REAL",
+      "fc.fake": "FAKE",
+      "fc.correct": "Correct!",
+      "fc.incorrect": "Incorrect.",
+      "fc.headline.1": "Free iPhone 15 Pro for everyone born in July!",
+      "fc.tip.1": "If it sounds too good to be true, it probably is.",
+      "fc.headline.2": "NASA confirms asteroid will pass safely by Earth.",
+      "fc.tip.2": "Check official sources like NASA.gov.",
+      "fc.headline.3": "Celebrity scandal! Click here to see the video!",
+      "fc.tip.3": "Clickbait headlines often lead to malware or scams.",
+      "reason.sender": "The sender address looked weird.",
+      "reason.urgent": "It asked for urgent action.",
+      "reason.guess": "I just guessed.",
+      "choice.bad.comp": "CLICK LINK & LOGIN",
+      "choice.good.comp": "DELETE & REPORT",
+      "choice.bad.phone": "OPEN LINK & PAY",
+      "choice.good.phone": "IGNORE / USE OFFICIAL APP",
+      "choice.bad.tablet": "ENTER PASSWORD",
+      "choice.good.tablet": "IGNORE & CHECK APP SETTINGS",
+      "scenario.fallback.title": "Suspicious Message",
+      "scenario.fallback.msg1": "This is a suspicious message.",
+      "scenario.fallback.msg2": "Details are missing, but something feels off.",
+      "scenario.fallback.bad": "Trust & Click",
+      "scenario.fallback.good": "Ignore / Verify",
+    },
+    "mk-MK": {
+      "menu.start": "ПОЧНИ",
+      "menu.quit": "ИЗЛЕЗ",
+      "menu.title": "САЈБЕР БИТ",
+      "menu.subtitle": "Авантура за препознавање на фишинг",
+      "menu.tip": "Совет: Вистинските напади често изгледаат итни и неочекувани.",
+      "menu.controls": "Притисни ENTER за Старт   P: Извештај",
+      "menu.cert": "Достапен Сертификат! Притисни C",
+      "menu.lang": "Јазик",
+      "menu.colorblind": "Далтонист",
+      "ui.level": "Ниво",
+      "ui.allowance": "Џепарлак",
+      "ui.back": "ESC: Назад",
+      "ui.restart": "R: Рестарт",
+      "ui.levelup": "НОВО НИВО!",
+      "ui.goal": "Цел: Откриј фишинг на секој уред.",
+      "ui.controls.room": "Стрелки: Движење   SPACE: Истражи   R: Рестарт Соба",
+      "ui.inspect": "SPACE: Истражи",
+      "ui.devices": "Уреди",
+      "ui.no_alerts": "Нема известувања",
+      "ui.click_open": "Кликни икона за отворање",
+      "ui.tap_open": "Допри апликација за отворање",
+      "ui.no_new_alerts": "Нема нови известувања во",
+      "ui.phone_hint": "Телефон - Допри ја апликацијата со значка.",
+      "ui.esc_room": "ESC: Назад во соба",
+      "app.factcheck": "Проверка на факти",
+      "app.messages": "Пораки",
+      "app.mail": "Пошта",
+      "app.phone": "Телефон",
+      "app.browser": "Прелистувач",
+      "app.social": "Социјални",
+      "device.phone": "Телефон",
+      "device.tablet": "Таблет",
+      "device.computer": "Компјутер",
+      "debrief.title": "Извештај за мисијата",
+      "debrief.quiz": "Брз квиз",
+      "debrief.continue": "Продолжи",
+      "debrief.redflags": "ПРОНАЈДЕНИ ЦРВЕНИ ЗНАМИЊА",
+      "debrief.reasoning": "Зошто го одбравте ова?",
+      "cert.title": "СЕРТИФИКАТ ЗА ЗАВРШЕНОСТ",
+      "cert.awarded": "Доделено на Агент",
+      "cert.msg": "За извонредна будност во сајбер безбедноста.",
+      "cert.return": "Притисни ESC за назад",
+      "ending.hacked": "БЕВТЕ ХАКИРАНИ!",
+      "ending.safe": "БЕЗБЕДНО!",
+      "ending.hacked_desc": "Паднавте на фишинг трик.",
+      "ending.safe_desc": "Правилно го препознавте ризикот.",
+      "ending.device": "Уред",
+      "ending.allowance_lost": "Поради оваа грешка, изгубивте дел од џепарлакот.",
+      "ending.allowance_safe": "Добрите одлуки го чуваат вашиот џепарлак.",
+      "ending.controls": "ESC: Назад   R: Рестарт соба",
+      "fc.real": "ВИСТИНА",
+      "fc.fake": "ЛАГА",
+      "fc.correct": "Точно!",
+      "fc.incorrect": "Неточно.",
+      "fc.headline.1": "Бесплатен iPhone 15 Pro за сите родени во Јули!",
+      "fc.tip.1": "Ако звучи премногу добро за да биде вистинито, веројатно е лага.",
+      "fc.headline.2": "НАСА потврди дека астероид ќе помине безбедно покрај Земјата.",
+      "fc.tip.2": "Проверете официјални извори како NASA.gov.",
+      "fc.headline.3": "Скандал со позната личност! Кликни тука за видеото!",
+      "fc.tip.3": "Насловите за кликови често водат до вируси или измами.",
+      "reason.sender": "Адресата на испраќачот изгледаше чудно.",
+      "reason.urgent": "Бараше итна акција.",
+      "reason.guess": "Само погодував.",
+      "choice.bad.comp": "КЛИКНИ ЛИНК & НАЈАВИ СЕ",
+      "choice.good.comp": "ИЗБРИШИ & ПРИЈАВИ",
+      "choice.bad.phone": "ОТВОРИ ЛИНК & ПЛАТИ",
+      "choice.good.phone": "ИГНОРИРАЈ / ОФИЦИЈАЛНА АПП",
+      "choice.bad.tablet": "ВНЕСИ ЛОЗИНКА",
+      "choice.good.tablet": "ИГНОРИРАЈ & ПРОВЕРИ ПОСТАВКИ",
+      "scenario.fallback.title": "Сомничела порака",
+      "scenario.fallback.msg1": "Ова е сомнителна порака.",
+      "scenario.fallback.msg2": "Недостасуваат детали, но нешто не е во ред.",
+      "scenario.fallback.bad": "Верувај & Кликни",
+      "scenario.fallback.good": "Игнорирај / Провери",
+    }
+  };
+
+  let currentLocale = "en";
+  function t(key) {
+    return (LOCALES[currentLocale] && LOCALES[currentLocale][key]) || key;
+  }
+
+  const BASE_PALETTE = {
     bg: rgb(5, 5, 16),
     hudBg: rgb(10, 12, 28),
     text: rgb(220, 235, 255),
     textDim: rgb(170, 190, 230),
     accent: rgb(80, 160, 255),
-    primary: rgb(20, 25, 45), // Added missing key
-    highlight: rgb(60, 70, 100), // Added missing key
+    primary: rgb(20, 25, 45),
+    highlight: rgb(60, 70, 100),
     success: rgb(90, 210, 140),
     warning: rgb(245, 230, 160),
     danger: rgb(255, 100, 100),
     panel: rgb(20, 25, 45),
     panelBorder: rgb(60, 70, 100),
   };
+
+  const CB_PALETTE = {
+    ...BASE_PALETTE,
+    success: rgb(0, 114, 178), // Blue
+    warning: rgb(230, 159, 0), // Orange
+    danger: rgb(213, 94, 0),   // Vermilion
+  };
+
+  const UI_PALETTE = { ...BASE_PALETTE };
+
+  function updatePalette() {
+     const src = playerState.settings.colorBlindMode ? CB_PALETTE : BASE_PALETTE;
+     Object.assign(UI_PALETTE, src);
+  }
 
   // ---------------- Persistent Player State & Progression ---------------- //
 
@@ -79,6 +256,7 @@
       level: 1,
       allowance: 100,
       completedScenarioIds: [],
+      badges: [],
       settings: {
         soundOn: true,
         difficultyMode: "auto", // auto | easy | medium | hard
@@ -116,6 +294,7 @@
   }
 
   let playerState = loadState();
+  updatePalette();
   let sessionLog = [];
 
   function getLevelForXp(xp) {
@@ -179,6 +358,18 @@
 
     if (scenario.id && !playerState.completedScenarioIds.includes(scenario.id)) {
       playerState.completedScenarioIds.push(scenario.id);
+    }
+
+    // Badges Logic
+    if (!playerState.badges) playerState.badges = [];
+    if (isGood && !playerState.badges.includes("Vigilant")) {
+        playerState.badges.push("Vigilant");
+    }
+    if (playerState.level >= 3 && !playerState.badges.includes("Agent")) {
+        playerState.badges.push("Agent");
+    }
+    if (playerState.level >= 5 && !playerState.badges.includes("Guardian")) {
+        playerState.badges.push("Guardian");
     }
 
     const now = Date.now();
@@ -316,14 +507,14 @@
 
     const difficultyLabel = difficulty || "medium";
 
-    let badChoiceLabel = "Do the risky thing";
-    let goodChoiceLabel = "Do the safe thing";
+    let badChoiceLabel = t("choice.bad.comp");
+    let goodChoiceLabel = t("choice.good.comp");
     let badExplanation = "That action helped the attacker.";
     let goodExplanation = "You reduced or removed the risk.";
 
     if (deviceId === "computer") {
-      badChoiceLabel = "CLICK LINK & LOGIN";
-      goodChoiceLabel = "DELETE & REPORT";
+      badChoiceLabel = t("choice.bad.comp");
+      goodChoiceLabel = t("choice.good.comp");
       badExplanation =
         "You entered your password on a fake site.\n" +
         "Attackers can now access your financial account.";
@@ -331,8 +522,8 @@
         "You spotted the strange domain and deleted the email.\n" +
         "Your credentials stayed safe.";
     } else if (deviceId === "phone") {
-      badChoiceLabel = "OPEN LINK & PAY";
-      goodChoiceLabel = "IGNORE / USE OFFICIAL APP";
+      badChoiceLabel = t("choice.bad.phone");
+      goodChoiceLabel = t("choice.good.phone");
       badExplanation =
         "You paid through a fake payment page.\n" +
         "Scammers now have your card details.";
@@ -340,8 +531,8 @@
         "You ignored the SMS and went through the official channel.\n" +
         "No surprise fees, no stolen card.";
     } else if (deviceId === "tablet") {
-      badChoiceLabel = "ENTER PASSWORD";
-      goodChoiceLabel = "IGNORE & CHECK APP SETTINGS";
+      badChoiceLabel = t("choice.bad.tablet");
+      goodChoiceLabel = t("choice.good.tablet");
       badExplanation =
         "You typed your password into a phishing page.\n" +
         "Attackers can impersonate you and contact your friends.";
@@ -380,12 +571,12 @@
         deviceId,
         deviceName: DEVICE_META[deviceId]?.deviceName || deviceId,
         difficulty: effectiveDifficulty,
-        title: "Suspicious Message",
+        title: t("scenario.fallback.title"),
         senderLabel: "From",
         sender: "unknown@fake-domain.com",
         messageLines: [
-          "This is a suspicious message.",
-          "Details are missing, but something feels off.",
+          t("scenario.fallback.msg1"),
+          t("scenario.fallback.msg2"),
         ],
         hintLines: [
           "Unexpected messages asking for action deserve extra care.",
@@ -394,8 +585,8 @@
           "Stop and think before clicking.",
           "Verify through a second, official channel.",
         ],
-        badChoiceLabel: "Trust & Click",
-        goodChoiceLabel: "Ignore / Verify",
+        badChoiceLabel: t("scenario.fallback.bad"),
+        goodChoiceLabel: t("scenario.fallback.good"),
         badExplanation: "Trusting unknown senders can expose your data.",
         goodExplanation: "Taking time to verify keeps you safer.",
         tags: ["generic"],
@@ -486,7 +677,7 @@
 
     // Level Text
     add([
-      text("Level " + level, { size: 18 }),
+      text(t("ui.level") + " " + level, { size: 18 }),
       pos(20, TOP_HUD_HEIGHT / 2),
       anchor("left"),
       color(UI_PALETTE.text),
@@ -534,7 +725,7 @@
     ]);
 
     // Allowance display (top-right)
-    const allowanceText = "Allowance: $" + allowance;
+    const allowanceText = t("ui.allowance") + ": $" + allowance;
     add([
       text(allowanceText, { size: 20 }),
       pos(width() - 24, TOP_HUD_HEIGHT / 2),
@@ -547,7 +738,7 @@
 
   function showLevelUpFx(newLevel) {
     const msg = add([
-      text("LEVEL UP!", { size: 32 }),
+      text(t("ui.levelup"), { size: 32 }),
       pos(width() / 2, 60),
       anchor("center"),
       color(250, 240, 170),
@@ -655,148 +846,91 @@
   // ------------ Scene 0: Main Menu / Landing ------------ //
   scene("menu", () => {
     addSceneFadeIn();
-    drawTopHud();
-    // Dim base background
     add([
-      rect(width(), height()),
-      pos(0, 0),
-      color(8, 6, 18),
+      sprite("menu-bg"),
+      pos(width() / 2, height() / 2),
+      anchor("center"),
       fixed(),
-      z(-20),
+      z(Z.BG),
     ]);
 
-    // Gradient-like vertical accent bands
-    const bandW = 120;
-    for (let i = 0; i < 4; i++) {
-      const x = (i + 0.5) * (width() / 4);
-      const col = i % 2 === 0 ? color(18, 28, 70) : color(14, 20, 50);
-      add([
-        rect(bandW, height() * 1.2),
-        pos(x, height() * 0.5),
-        col,
-        opacity(0.65),
-        anchor("center"),
+    const langY = 28;
+    const langSpacing = 40;
+    const langBaseX = width() - 40;
+
+    function addLangToggle(code, label, index) {
+      const isActive = currentLocale === code;
+      return add([
+        text(label, { size: 20 }),
+        pos(langBaseX - index * langSpacing, langY),
+        anchor("right"),
+        color(isActive ? UI_PALETTE.accent : UI_PALETTE.text),
         fixed(),
-        z(-19),
-      ]);
-    }
-
-    // Game title: "CYBER BIT" - Static, Big, Blocky
-    add([
-      text("CYBER BIT", { size: 100 }),
-      pos(width() / 2, height() * 0.25),
-      anchor("center"),
-      color(135, 206, 250), // Light Sky Blue
-      outline(8, rgb(0, 0, 0)),
-    ]);
-
-    // Subtitle
-    add([
-      text("A Phishing Awareness Adventure", { size: 24 }),
-      pos(width() / 2, height() * 0.35),
-      anchor("center"),
-      color(210, 230, 255),
-    ]);
-
-    // Glowing pad under buttons
-    const pad = add([
-      rect(460, 160),
-      pos(width() / 2, height() * 0.6 + 10),
-      color(16, 22, 46),
-      outline(3, rgb(70, 120, 210)),
-      anchor("center"),
-    ]);
-
-    function menuButton(cfg) {
-      const btn = add([
-        rect(200, 56),
-        pos(cfg.x, cfg.y),
-        color(cfg.bg[0], cfg.bg[1], cfg.bg[2]),
-        outline(3, rgb(10, 10, 30)),
-        anchor("center"),
         area(),
-        scale(1),
-        cfg.tag,
+        "lang-toggle-" + code,
       ]);
-      add([
-        text(cfg.label, { size: 24 }),
-        pos(cfg.x, cfg.y),
-        anchor("center"),
-        color(0, 0, 0),
-      ]);
-      return btn;
     }
 
-    menuButton({
-      x: width() / 2,
-      y: height() * 0.55,
-      bg: [190, 245, 200],
-      label: "START",
-      tag: "menu-start",
-    });
+    addLangToggle("en", "EN", 1);
+    addLangToggle("mk-MK", "MK", 0);
 
-    menuButton({
-      x: width() / 2,
-      y: height() * 0.65,
-      bg: [240, 200, 190],
-      label: "QUIT",
-      tag: "menu-quit",
-    });
+    const startBtnY = height() * 0.65;
 
     add([
-      text("Press ENTER to Start   P: Progress Report", { size: 18 }),
-      pos(width() / 2, height() * 0.75),
+      rect(260, 80, { radius: 999 }),
+      pos(width() / 2, startBtnY),
       anchor("center"),
-      color(200, 210, 240),
+      color(UI_PALETTE.accent),
+      outline(4, rgb(10, 20, 40)),
+      area(),
+      scale(1),
+      "menu-start",
     ]);
 
     add([
-      text("Tip: Real attacks often feel urgent and unexpected.", { size: 16 }),
-      pos(width() / 2, height() * 0.82),
+      text(t("menu.start"), { size: 32 }),
+      pos(width() / 2, startBtnY),
       anchor("center"),
-      color(180, 200, 255),
+      color(0, 0, 0),
     ]);
 
-    // Hover effects with color + slight scale
     onHover("menu-start", (b) => {
-      b.color = rgb(210, 255, 210);
+      b.color = UI_PALETTE.highlight;
       b.scale = vec2(1.06, 1.06);
     }, (b) => {
-      b.color = rgb(190, 245, 200);
+      b.color = UI_PALETTE.accent;
       b.scale = vec2(1, 1);
     });
 
-    onHover("menu-quit", (b) => {
-      b.color = rgb(255, 220, 210);
-      b.scale = vec2(1.06, 1.06);
-    }, (b) => {
-      b.color = rgb(240, 200, 190);
-      b.scale = vec2(1, 1);
-    });
-
-    // Click handlers
     onClick("menu-start", () => {
       playUiClickSfx();
       go("room");
     });
 
-    onClick("menu-quit", () => {
-      playUiClickSfx();
-      go("quit");
+    onClick("lang-toggle-en", () => {
+      currentLocale = "en";
+      go("menu");
     });
+
+    onClick("lang-toggle-mk-MK", () => {
+      currentLocale = "mk-MK";
+      go("menu");
+    });
+
+    if (playerState.level >= 5) {
+       add([
+         text(t("menu.cert"), { size: 16 }),
+         pos(width()/2, height() - 40),
+         anchor("center"),
+         color(255, 215, 0)
+       ]);
+       onKeyPress("c", () => go("certificate"));
+    }
 
     // Keyboard shortcuts
     onKeyPress("enter", () => {
       playUiClickSfx();
       go("room");
-    });
-    onKeyPress("escape", () => {
-      go("quit");
-    });
-
-    onKeyPress("p", () => {
-      playUiClickSfx();
-      go("report");
     });
   });
 
@@ -1140,14 +1274,14 @@
       z(20),
     ]);
     add([
-      text("Arrows: Move   SPACE: Inspect   R: Restart Room", { size: 18 }),
+      text(t("ui.controls.room"), { size: 18 }),
       pos(24, height() - hudHeight + 18),
       color(220, 220, 230),
       fixed(),
       z(21),
     ]);
     add([
-      text("Goal: Spot phishing on every device.", { size: 16 }),
+      text(t("ui.goal"), { size: 16 }),
       pos(24, height() - hudHeight + 38),
       color(180, 210, 255),
       fixed(),
@@ -1170,7 +1304,7 @@
 
     const sidebarTitleY = 32;
     add([
-      text("Devices", { size: 20 }),
+      text(t("ui.devices"), { size: 20 }),
       pos(width() - sidebarWidth + 20, sidebarTitleY),
       color(210, 225, 255),
       fixed(),
@@ -1179,9 +1313,9 @@
 
     const deviceOrder = ["phone", "tablet", "computer"];
     const deviceNames = {
-      phone: "Phone",
-      tablet: "Tablet",
-      computer: "Computer",
+      phone: t("device.phone"),
+      tablet: t("device.tablet"),
+      computer: t("device.computer"),
     };
 
     deviceOrder.forEach((id, index) => {
@@ -1254,7 +1388,7 @@
       ]);
 
       const label = add([
-        text("No alerts", { size: 14 }),
+        text(t("ui.no_alerts"), { size: 14 }),
         pos(width() - sidebarWidth + 52, baseY + 32),
         color(170, 190, 220),
         fixed(),
@@ -1408,7 +1542,7 @@
     // Computer desk (center)
     createDevice({
       id: "computer",
-      label: "Computer",
+      label: t("device.computer"),
       x: deskX,
       y: deskY - 20,
     });
@@ -1416,7 +1550,7 @@
     // Phone (on chest)
     createDevice({
       id: "phone",
-      label: "Phone",
+      label: t("device.phone"),
       x: chestX,
       y: chestY - 20,
       radius: 100,
@@ -1425,7 +1559,7 @@
     // Tablet (on nightstand)
     createDevice({
       id: "tablet",
-      label: "Tablet",
+      label: t("device.tablet"),
       x: nightX,
       y: nightY - 10,
       radius: 100,
@@ -1651,7 +1785,7 @@
           activeInteraction = nearest;
           if (promptText) destroy(promptText);
           promptText = add([
-            text("SPACE: Inspect " + nearest.label, { size: 22 }),
+            text(t("ui.inspect") + " " + nearest.label, { size: 22 }),
             pos(width() / 2, height() - hudHeight - 24),
             anchor("center"),
             color(255, 240, 160),
@@ -1821,10 +1955,11 @@
 
     // App icons grid
     const apps = [
-      { id: "Messages", label: "Messages", col: 0, row: 0, color: rgb(80, 200, 120) },
-      { id: "Mail", label: "Mail", col: 1, row: 0, color: rgb(90, 160, 255) },
-      { id: "Phone", label: "Phone", col: 0, row: 1, color: rgb(60, 200, 140) },
-      { id: "Browser", label: "Browser", col: 1, row: 1, color: rgb(255, 200, 120) },
+      { id: "Messages", label: t("app.messages"), col: 0, row: 0, color: rgb(80, 200, 120) },
+      { id: "Mail", label: t("app.mail"), col: 1, row: 0, color: rgb(90, 160, 255) },
+      { id: "Phone", label: t("app.phone"), col: 0, row: 1, color: rgb(60, 200, 140) },
+      { id: "Browser", label: t("app.browser"), col: 1, row: 1, color: rgb(255, 200, 120) },
+      { id: "FactCheck", label: t("app.factcheck"), col: 0, row: 2, color: rgb(150, 100, 200) },
     ];
 
     const gridOriginX = phoneX - 80;
@@ -1881,14 +2016,14 @@
     });
 
     add([
-      text("Phone - Tap the app with a badge.", { size: 20 }),
+      text(t("ui.phone_hint"), { size: 20 }),
       pos(width() / 2, phoneY - phoneH / 2 - 40),
       anchor("center"),
       color(210, 220, 240),
     ]);
 
     add([
-      text("ESC: Back to room", { size: 16 }),
+      text(t("ui.esc_room"), { size: 16 }),
       pos(width() / 2, phoneY + phoneH / 2 + 24),
       anchor("center"),
       color(190, 200, 220),
@@ -1903,6 +2038,11 @@
 
     onClick("phone-app", (icon) => {
       const appId = icon.appId;
+      if (appId === "FactCheck") {
+        playUiClickSfx();
+        go("fact-check");
+        return;
+      }
       if (highlightedApp && appId === highlightedApp) {
         playUiClickSfx();
         go("scenario", {
@@ -1967,9 +2107,9 @@
 
     // Desktop icons on left side
     const desktopApps = [
-      { id: "Mail", label: "Mail", yOff: 0, color: rgb(90, 160, 255) },
-      { id: "Browser", label: "Browser", yOff: 90, color: rgb(255, 200, 120) },
-      { id: "Social", label: "Social", yOff: 180, color: rgb(200, 100, 200) },
+      { id: "Mail", label: t("app.mail"), yOff: 0, color: rgb(90, 160, 255) },
+      { id: "Browser", label: t("app.browser"), yOff: 90, color: rgb(255, 200, 120) },
+      { id: "Social", label: t("app.social"), yOff: 180, color: rgb(200, 100, 200) },
     ];
 
     const iconsX = 100;
@@ -2023,7 +2163,7 @@
     });
 
     let infoText = add([
-      text("Click an icon to open", { size: 18 }),
+      text(t("ui.click_open"), { size: 18 }),
       pos(width() / 2, height() / 2),
       anchor("center"),
       color(220, 220, 240),
@@ -2035,9 +2175,9 @@
       if (icon.appId === highlightedApp) {
         go("scenario", { scenario, sourceDevice: "computer", sourceApp: icon.appId });
       } else {
-        infoText.text = "No new alerts in " + icon.appId;
+        infoText.text = t("ui.no_new_alerts") + " " + icon.appId;
         wait(1.5, () => {
-           infoText.text = "Click an icon to open";
+           infoText.text = t("ui.click_open");
         });
       }
     });
@@ -2099,9 +2239,9 @@
     ]);
 
     const dockApps = [
-      { id: "Mail", label: "Mail", xOff: -120, color: rgb(90, 160, 255) },
-      { id: "Messages", label: "Messages", xOff: 0, color: rgb(80, 200, 120) },
-      { id: "Phone", label: "Phone", xOff: 120, color: rgb(60, 200, 140) },
+      { id: "Mail", label: t("app.mail"), xOff: -120, color: rgb(90, 160, 255) },
+      { id: "Messages", label: t("app.messages"), xOff: 0, color: rgb(80, 200, 120) },
+      { id: "Phone", label: t("app.phone"), xOff: 120, color: rgb(60, 200, 140) },
     ];
 
     dockApps.forEach((app) => {
@@ -2145,7 +2285,7 @@
     });
 
     let infoText = add([
-      text("Tap an app to open", { size: 20 }),
+      text(t("ui.tap_open"), { size: 20 }),
       pos(tabX, tabY - 50),
       anchor("center"),
       color(UI_PALETTE.text),
@@ -2157,9 +2297,9 @@
       if (icon.appId === highlightedApp) {
         go("scenario", { scenario, sourceDevice: "tablet", sourceApp: icon.appId });
       } else {
-        infoText.text = "No new messages in " + icon.appId;
+        infoText.text = t("ui.no_new_alerts") + " " + icon.appId;
         wait(1.5, () => {
-           infoText.text = "Tap an app to open";
+           infoText.text = t("ui.tap_open");
         });
       }
     });
@@ -2167,6 +2307,291 @@
     onKeyPress("escape", () => {
       go("room");
     });
+  });
+
+  // ------------ Scene: Fact Check (Anti-Disinformation) ------------ //
+  const FACT_CHECK_DATA = [
+    {
+      headline: "fc.headline.1",
+      isTrue: false,
+      tip: "fc.tip.1",
+    },
+    {
+      headline: "fc.headline.2",
+      isTrue: true,
+      tip: "fc.tip.2",
+    },
+    {
+      headline: "fc.headline.3",
+      isTrue: false,
+      tip: "fc.tip.3",
+    },
+  ];
+
+  scene("fact-check", () => {
+    addSceneFadeIn();
+    drawTopHud();
+
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(UI_PALETTE.bg),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    const item = pick(FACT_CHECK_DATA);
+
+    add([
+      text(t("app.factcheck"), { size: 32 }),
+      pos(width() / 2, 100),
+      anchor("center"),
+      color(UI_PALETTE.accent),
+    ]);
+
+    // Card
+    add([
+      rect(600, 300, { radius: 8 }),
+      pos(width() / 2, height() / 2),
+      anchor("center"),
+      color(UI_PALETTE.panel),
+      outline(2, UI_PALETTE.panelBorder),
+    ]);
+
+    add([
+      text(t(item.headline), { size: 24, width: 500, align: "center" }),
+      pos(width() / 2, height() / 2 - 40),
+      anchor("center"),
+      color(UI_PALETTE.text),
+    ]);
+
+    // Buttons
+    const btnY = height() / 2 + 80;
+    
+    function makeBtn(label, isTrue, x) {
+      const btn = add([
+        rect(140, 50, { radius: 4 }),
+        pos(x, btnY),
+        anchor("center"),
+        color(UI_PALETTE.primary),
+        outline(2, UI_PALETTE.highlight),
+        area(),
+        "fc-btn",
+        { isTrueVal: isTrue }
+      ]);
+      add([
+        text(label, { size: 20 }),
+        pos(x, btnY),
+        anchor("center"),
+        color(UI_PALETTE.text),
+      ]);
+      return btn;
+    }
+
+    makeBtn(t("fc.real"), true, width() / 2 - 100);
+    makeBtn(t("fc.fake"), false, width() / 2 + 100);
+
+    let feedback = add([
+      text("", { size: 20, width: 600, align: "center" }),
+      pos(width() / 2, height() / 2 + 160),
+      anchor("center"),
+      color(UI_PALETTE.text),
+    ]);
+
+    onClick("fc-btn", (btn) => {
+      const correct = btn.isTrueVal === item.isTrue;
+      if (correct) {
+        playChoiceGoodSfx();
+        feedback.text = t("fc.correct") + " " + t(item.tip);
+        feedback.color = UI_PALETTE.success;
+        playerState.xp += 10;
+      } else {
+        playChoiceBadSfx();
+        feedback.text = t("fc.incorrect") + " " + t(item.tip);
+        feedback.color = UI_PALETTE.danger;
+      }
+      saveState();
+      wait(2, () => go("device-phone")); // Go back to phone
+    });
+
+    add([
+      text(t("ui.back"), { size: 18 }),
+      pos(width() / 2, height() - 50),
+      anchor("center"),
+      color(UI_PALETTE.textDim),
+    ]);
+
+    onKeyPress("escape", () => go("device-phone"));
+  });
+
+  // ------------ Scene: Debrief (Assessment Loop) ------------ //
+  scene("debrief", (data) => {
+    addSceneFadeIn();
+    drawTopHud();
+
+    const { scenario, isGood, sourceDevice, sourceApp } = data;
+
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(UI_PALETTE.bg),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    add([
+      text(t("debrief.title"), { size: 32 }),
+      pos(width() / 2, 80),
+      anchor("center"),
+      color(UI_PALETTE.accent),
+    ]);
+
+    // Show Red Flags
+    add([
+      text(t("debrief.redflags"), { size: 24 }),
+      pos(width() / 2, 140),
+      anchor("center"),
+      color(UI_PALETTE.danger),
+    ]);
+
+    const flags = scenario.hintLines || ["Check sender", "Check urgency", "Check links"];
+    flags.forEach((flag, idx) => {
+      add([
+        text("- " + flag, { size: 20 }),
+        pos(width() / 2, 180 + idx * 30),
+        anchor("center"),
+        color(UI_PALETTE.text),
+      ]);
+    });
+
+    // Reasoning Input (Simplified as multiple choice for now)
+    add([
+      text(t("debrief.reasoning"), { size: 20 }),
+      pos(width() / 2, 300),
+      anchor("center"),
+      color(UI_PALETTE.warning),
+    ]);
+
+    const reasons = [
+      t("reason.sender"),
+      t("reason.urgent"),
+      t("reason.guess"),
+    ];
+
+    reasons.forEach((r, idx) => {
+      add([
+        rect(400, 40, { radius: 4 }),
+        pos(width() / 2, 340 + idx * 50),
+        anchor("center"),
+        color(UI_PALETTE.panel),
+        outline(1, UI_PALETTE.panelBorder),
+        area(),
+        "reason-btn",
+        { reason: r }
+      ]);
+      add([
+        text(r, { size: 16 }),
+        pos(width() / 2, 340 + idx * 50),
+        anchor("center"),
+        color(UI_PALETTE.text),
+      ]);
+    });
+
+    let selectedReason = null;
+    onClick("reason-btn", (btn) => {
+      playUiClickSfx();
+      selectedReason = btn.reason;
+      // Highlight selection
+      get("reason-btn").forEach(b => b.color = UI_PALETTE.panel);
+      btn.color = UI_PALETTE.highlight;
+      
+      // Show Continue
+      if (!get("continue-btn").length) {
+        const contBtn = add([
+          rect(200, 50, { radius: 4 }),
+          pos(width() / 2, 550),
+          anchor("center"),
+          color(UI_PALETTE.success),
+          area(),
+          "continue-btn"
+        ]);
+        add([
+          text(t("debrief.continue"), { size: 20 }),
+          pos(width() / 2, 550),
+          anchor("center"),
+          color(rgb(0,0,0)),
+        ]);
+      }
+    });
+
+    onClick("continue-btn", () => {
+      playUiClickSfx();
+      // Go to result
+      if (isGood) {
+        go("good-ending", { scenario, sourceDevice, sourceApp });
+      } else {
+        go("bad-ending", { scenario, sourceDevice, sourceApp });
+      }
+    });
+  });
+
+  // ------------ Scene: Certificate ------------ //
+  scene("certificate", () => {
+    addSceneFadeIn();
+    
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(UI_PALETTE.bg),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    // Certificate Border
+    add([
+      rect(800, 500, { radius: 4 }),
+      pos(width() / 2, height() / 2),
+      anchor("center"),
+      color(250, 250, 240),
+      outline(10, rgb(200, 180, 50)),
+    ]);
+
+    add([
+      text(t("cert.title"), { size: 40, font: "serif" }),
+      pos(width() / 2, height() / 2 - 150),
+      anchor("center"),
+      color(rgb(0, 0, 0)),
+    ]);
+
+    add([
+      text(t("cert.awarded"), { size: 24, font: "serif" }),
+      pos(width() / 2, height() / 2 - 50),
+      anchor("center"),
+      color(rgb(50, 50, 50)),
+    ]);
+
+    add([
+      text("PLAYER", { size: 48, font: "serif", weight: "bold" }), // Could use player name if we had it
+      pos(width() / 2, height() / 2 + 20),
+      anchor("center"),
+      color(rgb(0, 0, 0)),
+    ]);
+
+    add([
+      text(t("cert.msg"), { size: 20, font: "serif" }),
+      pos(width() / 2, height() / 2 + 100),
+      anchor("center"),
+      color(rgb(50, 50, 50)),
+    ]);
+
+    add([
+      text(t("cert.return"), { size: 16 }),
+      pos(width() / 2, height() - 40),
+      anchor("center"),
+      color(UI_PALETTE.textDim),
+    ]);
+
+    onKeyPress("escape", () => go("menu"));
   });
 
   // ------------ Scene 2: Generic Phishing Scenario UI ------------ //
@@ -2362,7 +2787,7 @@
         }
       }
       playChoiceBadSfx();
-      go("bad-ending", { scenario, sourceDevice, sourceApp });
+      go("debrief", { scenario, isGood: false, sourceDevice, sourceApp });
     });
 
     onClick("choice-good", () => {
@@ -2373,7 +2798,7 @@
         }
       }
       playChoiceGoodSfx();
-      go("good-ending", { scenario, sourceDevice, sourceApp });
+      go("debrief", { scenario, isGood: true, sourceDevice, sourceApp });
     });
   });
 
@@ -2398,25 +2823,25 @@
     ]);
 
     add([
-      text("YOU GOT HACKED!", { size: 42 }),
+      text(t("ending.hacked"), { size: 42 }),
       pos(width() / 2, height() / 2 - 80),
       anchor("center"),
       color(255, 220, 220),
     ]);
 
     const deviceLine = scenario
-      ? `Device: ${scenario.deviceName}`
-      : "A phishing attack succeeded.";
+      ? `${t("ending.device")}: ${scenario.deviceName}`
+      : t("ending.hacked_desc");
 
     const beforeAllowance =
       typeof playerState.allowance === "number" ? playerState.allowance : 100;
 
     const explanation =
-      (scenario ? scenario.badExplanation : "You fell for a phishing trick.") +
+      (scenario ? scenario.badExplanation : t("ending.hacked_desc")) +
       "\n\n" +
       deviceLine +
       "\n\n" +
-      "Because of this mistake, part of your allowance was lost.";
+      t("ending.allowance_lost");
 
     add([
       text(explanation, { size: 22 }),
@@ -2426,7 +2851,7 @@
     ]);
 
     add([
-      text("ESC: Back to device/room   R: Restart room", { size: 20 }),
+      text(t("ending.controls"), { size: 20 }),
       pos(width() / 2, height() - 80),
       anchor("center"),
       color(255, 255, 255),
@@ -2490,22 +2915,22 @@
     ]);
 
     add([
-      text("SAFE!", { size: 42 }),
+      text(t("ending.safe"), { size: 42 }),
       pos(width() / 2, height() / 2 - 80),
       anchor("center"),
       color(220, 255, 220),
     ]);
 
     const deviceLine = scenario
-      ? `Device: ${scenario.deviceName}`
-      : "You made a safe choice.";
+      ? `${t("ending.device")}: ${scenario.deviceName}`
+      : t("ending.safe_desc");
 
     const explanation =
-      (scenario ? scenario.goodExplanation : "You correctly identified the phishing risk.") +
+      (scenario ? scenario.goodExplanation : t("ending.safe_desc")) +
       "\n\n" +
       deviceLine +
       "\n\n" +
-      "Good choices help you keep your allowance safe.";
+      t("ending.allowance_safe");
 
     add([
       text(explanation, { size: 22 }),
@@ -2515,7 +2940,7 @@
     ]);
 
     add([
-      text("ESC: Back to device/room   R: Restart room", { size: 20 }),
+      text(t("ending.controls"), { size: 20 }),
       pos(width() / 2, height() - 80),
       anchor("center"),
       color(255, 255, 255),
