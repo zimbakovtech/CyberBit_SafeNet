@@ -1,0 +1,2565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cyber Security: Phishing Trainer</title>
+  <style>
+    /* Basic page styling: fullscreen canvas, dark background */
+    body {
+      margin: 0;
+      background: #05050a;
+      height: 100vh;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #ffffff;
+    }
+  </style>
+  <!-- Kaboom.js CDN (as requested) -->
+  <script src="https://unpkg.com/kaboom@3000.0.1/dist/kaboom.js"></script>
+</head>
+<body>
+<script>
+  // Make the game use the full browser window
+  const GAME_WIDTH = window.innerWidth;
+  const GAME_HEIGHT = window.innerHeight;
+
+  // Initialize Kaboom with fullscreen canvas and dark background
+  kaboom({
+    width: GAME_WIDTH,
+    height: GAME_HEIGHT,
+    background: [5, 5, 16],
+    global: true,
+    scale: 1,
+  });
+
+  const PLAYER_SPEED = 120;
+
+  // --- CONSTANTS & THEME ---
+  const TOP_HUD_HEIGHT = 64;
+  const Z = {
+    BG: -20,
+    FLOOR: -10,
+    FURNITURE_BASE: -5,
+    FURNITURE: -3,
+    DEVICES: 0,
+    PLAYER: 5,
+    PLAYER_ACCENT: 6,
+    UI_BASE: 20,
+    HUD_BG: 30,
+    HUD_TEXT: 31,
+    HUD_OVERLAY: 32,
+    FX: 40,
+    TOAST: 50,
+    MODAL_BG: 90,
+    MODAL: 100,
+  };
+
+  const UI_PALETTE = {
+    bg: rgb(5, 5, 16),
+    hudBg: rgb(10, 12, 28),
+    text: rgb(220, 235, 255),
+    textDim: rgb(170, 190, 230),
+    accent: rgb(80, 160, 255),
+    primary: rgb(20, 25, 45), // Added missing key
+    highlight: rgb(60, 70, 100), // Added missing key
+    success: rgb(90, 210, 140),
+    warning: rgb(245, 230, 160),
+    danger: rgb(255, 100, 100),
+    panel: rgb(20, 25, 45),
+    panelBorder: rgb(60, 70, 100),
+  };
+
+  // ---------------- Persistent Player State & Progression ---------------- //
+
+  const STORAGE_KEY = "cyber-bit-state-v1";
+
+  function createDefaultState() {
+    return {
+      xp: 0,
+      level: 1,
+      allowance: 100,
+      completedScenarioIds: [],
+      settings: {
+        soundOn: true,
+        difficultyMode: "auto", // auto | easy | medium | hard
+        colorBlindMode: false,
+        showControlHints: true,
+      },
+    };
+  }
+
+  function loadState() {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return createDefaultState();
+      const parsed = JSON.parse(raw);
+      const base = createDefaultState();
+      return {
+        ...base,
+        ...parsed,
+        settings: {
+          ...base.settings,
+          ...(parsed.settings || {}),
+        },
+      };
+    } catch (e) {
+      return createDefaultState();
+    }
+  }
+
+  function saveState() {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(playerState));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }
+
+  let playerState = loadState();
+  let sessionLog = [];
+
+  function getLevelForXp(xp) {
+    return Math.floor(xp / 120) + 1;
+  }
+
+  function getLevelProgress(xp) {
+    const level = getLevelForXp(xp);
+    const levelStartXp = (level - 1) * 120;
+    const nextLevelXp = level * 120;
+    const span = nextLevelXp - levelStartXp;
+    return {
+      level,
+      ratio: span > 0 ? (xp - levelStartXp) / span : 0,
+      nextLevelXp,
+    };
+  }
+
+  function getDifficultyForLevel(level) {
+    if (level <= 2) return "easy";
+    if (level <= 4) return "medium";
+    return "hard";
+  }
+
+  function resolveDifficultyOverride() {
+    const mode = playerState.settings.difficultyMode;
+    if (mode === "easy" || mode === "medium" || mode === "hard") return mode;
+    return getDifficultyForLevel(playerState.level || 1);
+  }
+
+  function applyOutcomeToPlayerState(scenario, isGood) {
+    if (!scenario) return;
+
+    const beforeXp = playerState.xp || 0;
+    const beforeAllowance =
+      typeof playerState.allowance === "number" ? playerState.allowance : 100;
+    const beforeLevel = playerState.level || getLevelForXp(beforeXp);
+
+    let xpDelta = 0;
+    let moneyDelta = 0;
+    const diff = scenario.difficulty || "medium";
+    if (isGood) {
+      if (diff === "easy") xpDelta = 25;
+      else if (diff === "medium") xpDelta = 40;
+      else xpDelta = 60; // hard
+      // Optional: small reward could be added here if desired
+    } else {
+      // For children: mistakes cost allowance money instead of XP.
+      if (diff === "easy") moneyDelta = -5;
+      else if (diff === "medium") moneyDelta = -10;
+      else moneyDelta = -15;
+    }
+
+    const newXp = Math.max(0, beforeXp + xpDelta);
+    const progress = getLevelProgress(newXp);
+    playerState.xp = newXp;
+    playerState.level = progress.level;
+
+    const newAllowance = Math.max(0, beforeAllowance + moneyDelta);
+    playerState.allowance = newAllowance;
+
+    if (scenario.id && !playerState.completedScenarioIds.includes(scenario.id)) {
+      playerState.completedScenarioIds.push(scenario.id);
+    }
+
+    const now = Date.now();
+    sessionLog.push({
+      timestamp: now,
+      scenarioId: scenario.id || "unknown",
+      deviceId: scenario.deviceId || "unknown",
+      difficulty: scenario.difficulty || "unknown",
+      result: isGood ? "good" : "bad",
+      allowanceBefore: beforeAllowance,
+      allowanceAfter: newAllowance,
+      tags: scenario.tags || [],
+    });
+
+    saveState();
+
+    const afterLevel = progress.level;
+    if (afterLevel > beforeLevel && typeof showLevelUpFx === "function") {
+      showLevelUpFx(afterLevel);
+    }
+  }
+
+  // ---------------- Scenario Templates & Generator (JSON-driven) ---------------- //
+
+  const SCENARIO_TEMPLATES = {
+    computer: [
+      {
+        id: "comp-email-1",
+        title: "Suspicious Email Login",
+        senderLabel: "From",
+        baseSender: "Security@paypal.com",
+        fakeDomains: ["paypa1.com", "paypal-secure-login.com", "pay-pal.com"],
+        introLines: [
+          "We noticed unusual activity on your account.",
+          "For your protection, we have temporarily limited what you can do.",
+        ],
+        urgencyPhrases: [
+          "Log in within 30 minutes to avoid permanent closure.",
+          "Failure to respond will result in account termination.",
+          "Click the button below to restore full access immediately.",
+        ],
+        hints: [
+          "Carefully inspect the domain in the sender address.",
+          "Fear-based, urgent language is a common phishing tactic.",
+          "Never click login links from unexpected emails.",
+        ],
+        tags: ["email", "account", "finance"],
+      },
+    ],
+    phone: [
+      {
+        id: "phone-sms-1",
+        title: "Delivery SMS",
+        senderLabel: "From",
+        baseSender: "+1 (900) 555-0133",
+        fakeDomains: [
+          "fast-ship-confirm-pay.com",
+          "quickparcel-fee-check.com",
+          "track-now-secure-fee.com",
+        ],
+        introLines: [
+          "[Delivery Notice] Your package is on hold.",
+          "A small verification fee is required to release it.",
+        ],
+        urgencyPhrases: [
+          "Complete payment in the next 10 minutes.",
+          "Last reminder before your parcel is returned.",
+        ],
+        hints: [
+          "Unknown or premium-rate numbers are suspicious.",
+          "Legitimate delivery services don't demand surprise fees by SMS.",
+          "Type the official URL yourself instead of tapping random links.",
+        ],
+        tags: ["sms", "delivery", "payment"],
+      },
+    ],
+    tablet: [
+      {
+        id: "tablet-social-1",
+        title: "Social Media Security Alert",
+        senderLabel: "App",
+        baseSender: "Facelook Security",
+        fakeDomains: [
+          "facelook-secure-check.com",
+          "face-lock-login.com",
+          "facelook-support-center.com",
+        ],
+        introLines: [
+          "We detected a login from a new device.",
+          "To keep your profile safe, we need you to confirm.",
+        ],
+        urgencyPhrases: [
+          "Verify now or your profile will be removed.",
+          "If you don't respond, your account may be disabled.",
+        ],
+        hints: [
+          "Check whether the URL exactly matches the real app.",
+          "Apps rarely ask for passwords through random web links.",
+          "Open the official app and check security alerts there.",
+        ],
+        tags: ["social", "password", "account"],
+      },
+    ],
+  };
+
+  const DEVICE_META = {
+    computer: { deviceName: "Computer" },
+    phone: { deviceName: "Phone" },
+    tablet: { deviceName: "Tablet" },
+  };
+
+  function pick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function makeTyposForDifficulty(base, difficulty) {
+    if (difficulty === "easy") return base.replace("paypal", "paypa1");
+    if (difficulty === "medium") return base.replace("paypal", "paypai");
+    return base.replace("paypal", "paypaI");
+  }
+
+  function buildScenarioFromTemplate(deviceId, tpl, difficulty) {
+    const meta = DEVICE_META[deviceId] || { deviceName: deviceId };
+    const fakeDomain = pick(tpl.fakeDomains);
+    let sender = tpl.baseSender;
+    if (deviceId === "computer") {
+      sender = makeTyposForDifficulty("security@paypal.com", difficulty);
+    }
+
+    const urlLine = "https://" + fakeDomain;
+    const messageLines = [...tpl.introLines, urlLine, pick(tpl.urgencyPhrases)];
+
+    const idSuffix = Math.floor(Math.random() * 9999).toString();
+    const scenarioId = tpl.id + "-" + difficulty + "-" + idSuffix;
+
+    const difficultyLabel = difficulty || "medium";
+
+    let badChoiceLabel = "Do the risky thing";
+    let goodChoiceLabel = "Do the safe thing";
+    let badExplanation = "That action helped the attacker.";
+    let goodExplanation = "You reduced or removed the risk.";
+
+    if (deviceId === "computer") {
+      badChoiceLabel = "CLICK LINK & LOGIN";
+      goodChoiceLabel = "DELETE & REPORT";
+      badExplanation =
+        "You entered your password on a fake site.\n" +
+        "Attackers can now access your financial account.";
+      goodExplanation =
+        "You spotted the strange domain and deleted the email.\n" +
+        "Your credentials stayed safe.";
+    } else if (deviceId === "phone") {
+      badChoiceLabel = "OPEN LINK & PAY";
+      goodChoiceLabel = "IGNORE / USE OFFICIAL APP";
+      badExplanation =
+        "You paid through a fake payment page.\n" +
+        "Scammers now have your card details.";
+      goodExplanation =
+        "You ignored the SMS and went through the official channel.\n" +
+        "No surprise fees, no stolen card.";
+    } else if (deviceId === "tablet") {
+      badChoiceLabel = "ENTER PASSWORD";
+      goodChoiceLabel = "IGNORE & CHECK APP SETTINGS";
+      badExplanation =
+        "You typed your password into a phishing page.\n" +
+        "Attackers can impersonate you and contact your friends.";
+      goodExplanation =
+        "You refused to enter your password on a strange site.\n" +
+        "Your social profile stays under your control.";
+    }
+
+    return {
+      id: scenarioId,
+      deviceId,
+      deviceName: meta.deviceName,
+      difficulty: difficultyLabel,
+      title: tpl.title,
+      senderLabel: tpl.senderLabel,
+      sender,
+      messageLines,
+      hintLines: tpl.hints,
+      tips: tpl.hints,
+      badChoiceLabel,
+      goodChoiceLabel,
+      badExplanation,
+      goodExplanation,
+      tags: tpl.tags || [],
+    };
+  }
+
+  function nextScenario(deviceId, difficultyOverride) {
+    const effectiveDifficulty =
+      difficultyOverride || resolveDifficultyOverride();
+    const list = SCENARIO_TEMPLATES[deviceId] || [];
+    if (!list.length) {
+      // Fallback simple scenario
+      return {
+        id: "fallback-" + deviceId,
+        deviceId,
+        deviceName: DEVICE_META[deviceId]?.deviceName || deviceId,
+        difficulty: effectiveDifficulty,
+        title: "Suspicious Message",
+        senderLabel: "From",
+        sender: "unknown@fake-domain.com",
+        messageLines: [
+          "This is a suspicious message.",
+          "Details are missing, but something feels off.",
+        ],
+        hintLines: [
+          "Unexpected messages asking for action deserve extra care.",
+        ],
+        tips: [
+          "Stop and think before clicking.",
+          "Verify through a second, official channel.",
+        ],
+        badChoiceLabel: "Trust & Click",
+        goodChoiceLabel: "Ignore / Verify",
+        badExplanation: "Trusting unknown senders can expose your data.",
+        goodExplanation: "Taking time to verify keeps you safer.",
+        tags: ["generic"],
+      };
+    }
+    const tpl = pick(list);
+    return buildScenarioFromTemplate(deviceId, tpl, effectiveDifficulty);
+  }
+
+  // Notification templates that can appear randomly on devices
+  const NOTIFICATION_DEFS = [
+    {
+      deviceId: "phone",
+      app: "Messages",
+      scenarioKey: "phone",
+      title: "New Message",
+      preview: "Unknown number: 'Your package is on hold...'",
+    },
+    {
+      deviceId: "phone",
+      app: "Mail",
+      scenarioKey: "phone",
+      title: "New Mail",
+      preview: "Account issue: verify now",
+    },
+    {
+      deviceId: "computer",
+      app: "Mail",
+      scenarioKey: "computer",
+      title: "New Email",
+      preview: "URGENT: Your account is locked!",
+    },
+    {
+      deviceId: "computer",
+      app: "Browser",
+      scenarioKey: "computer",
+      title: "Security Alert",
+      preview: "Popup wants you to sign in again",
+    },
+    {
+      deviceId: "tablet",
+      app: "Mail",
+      scenarioKey: "tablet",
+      title: "New Mail",
+      preview: "We detected a new login...",
+    },
+    {
+      deviceId: "tablet",
+      app: "Messages",
+      scenarioKey: "tablet",
+      title: "New Message",
+      preview: "Friend: 'Is this you in this video?'",
+    },
+  ];
+
+  // Global logical notification state (persists across scenes)
+  const notificationLogic = {
+    // deviceId -> { deviceId, app, title, preview, scenario }
+    devices: {},
+  };
+
+  // ---------------- Shared UI Helpers (HUD, FX, Audio) ---------------- //
+
+  function drawTopHud() {
+    // Background bar
+    add([
+      rect(width(), TOP_HUD_HEIGHT),
+      pos(0, 0),
+      color(UI_PALETTE.hudBg),
+      fixed(),
+      z(Z.HUD_BG),
+    ]);
+
+    // Bottom border for HUD
+    add([
+      rect(width(), 2),
+      pos(0, TOP_HUD_HEIGHT - 2),
+      color(UI_PALETTE.panelBorder),
+      fixed(),
+      z(Z.HUD_BG),
+    ]);
+
+    const xp = playerState.xp || 0;
+    const progress = getLevelProgress(xp);
+    const level = progress.level;
+    const allowance =
+      typeof playerState.allowance === "number" ? playerState.allowance : 100;
+
+    // Level Text
+    add([
+      text("Level " + level, { size: 18 }),
+      pos(20, TOP_HUD_HEIGHT / 2),
+      anchor("left"),
+      color(UI_PALETTE.text),
+      fixed(),
+      z(Z.HUD_TEXT),
+    ]);
+
+    // XP Bar Container
+    const barW = 200;
+    const barH = 16;
+    const barX = 140;
+    const barY = TOP_HUD_HEIGHT / 2;
+
+    add([
+      rect(barW, barH, { radius: 4 }),
+      pos(barX, barY),
+      anchor("left"),
+      color(0, 0, 0),
+      outline(2, UI_PALETTE.panelBorder),
+      fixed(),
+      z(Z.HUD_TEXT),
+    ]);
+
+    // XP Bar Fill
+    const fillRatio = Math.max(0, Math.min(1, progress.ratio));
+    if (fillRatio > 0) {
+      add([
+        rect(barW * fillRatio, barH - 4, { radius: 2 }),
+        pos(barX + 2, barY),
+        anchor("left"),
+        color(UI_PALETTE.success),
+        fixed(),
+        z(Z.HUD_OVERLAY),
+      ]);
+    }
+
+    // XP Text
+    add([
+      text(`${xp} / ${progress.nextLevelXp} XP`, { size: 14 }),
+      pos(barX + barW + 12, barY),
+      anchor("left"),
+      color(UI_PALETTE.textDim),
+      fixed(),
+      z(Z.HUD_TEXT),
+    ]);
+
+    // Allowance display (top-right)
+    const allowanceText = "Allowance: $" + allowance;
+    add([
+      text(allowanceText, { size: 20 }),
+      pos(width() - 24, TOP_HUD_HEIGHT / 2),
+      anchor("right"),
+      color(UI_PALETTE.warning),
+      fixed(),
+      z(Z.HUD_TEXT),
+    ]);
+  }
+
+  function showLevelUpFx(newLevel) {
+    const msg = add([
+      text("LEVEL UP!", { size: 32 }),
+      pos(width() / 2, 60),
+      anchor("center"),
+      color(250, 240, 170),
+      outline(4, rgb(60, 80, 20)),
+      z(40),
+      "level-up-fx",
+      { t: 0 },
+    ]);
+
+    add([
+      rect(120, 36),
+      pos(width() / 2, 100),
+      color(40, 80, 140),
+      outline(3, rgb(200, 220, 255)),
+      anchor("center"),
+      z(39),
+    ]);
+    add([
+      text("Lv " + newLevel, { size: 20 }),
+      pos(width() / 2, 100),
+      anchor("center"),
+      color(230, 245, 255),
+      z(40),
+    ]);
+
+    onUpdate("level-up-fx", (o) => {
+      o.t += dt();
+      o.pos.y = 60 - o.t * 8;
+      if (o.t > 2.5) {
+        destroy(o);
+      }
+    });
+  }
+
+  // Minimal audio helper (procedural beeps, no external assets)
+  let audioCtx = null;
+  function playBeep(freq, duration) {
+    if (!playerState.settings.soundOn) return;
+    try {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = audioCtx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      gain.gain.value = 0.12;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      osc.start(now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+      osc.stop(now + duration + 0.02);
+    } catch (e) {
+      // ignore audio errors
+    }
+  }
+
+  function playChoiceGoodSfx() {
+    playBeep(880, 0.15);
+  }
+
+  function playChoiceBadSfx() {
+    playBeep(220, 0.25);
+  }
+
+  function playUiClickSfx() {
+    playBeep(520, 0.09);
+  }
+
+  function playNotificationSfx() {
+    playBeep(920, 0.14);
+  }
+
+  function addSceneFadeIn() {
+    const overlay = add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(0, 0, 0),
+      opacity(1),
+      fixed(),
+      z(50),
+      "fade-in-overlay",
+      { t: 0 },
+    ]);
+    onUpdate("fade-in-overlay", (o) => {
+      o.t += dt();
+      const alpha = Math.max(0, 1 - o.t * 1.5);
+      o.opacity = alpha;
+      if (alpha <= 0) {
+        destroy(o);
+      }
+    });
+    return overlay;
+  }
+
+  // Helper to compute distance between two vec2-like positions
+  function dist(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // ------------ Scene 0: Main Menu / Landing ------------ //
+  scene("menu", () => {
+    addSceneFadeIn();
+    drawTopHud();
+    // Dim base background
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(8, 6, 18),
+      fixed(),
+      z(-20),
+    ]);
+
+    // Gradient-like vertical accent bands
+    const bandW = 120;
+    for (let i = 0; i < 4; i++) {
+      const x = (i + 0.5) * (width() / 4);
+      const col = i % 2 === 0 ? color(18, 28, 70) : color(14, 20, 50);
+      add([
+        rect(bandW, height() * 1.2),
+        pos(x, height() * 0.5),
+        col,
+        opacity(0.65),
+        anchor("center"),
+        fixed(),
+        z(-19),
+      ]);
+    }
+
+    // Game title: "CYBER BIT" - Static, Big, Blocky
+    add([
+      text("CYBER BIT", { size: 100 }),
+      pos(width() / 2, height() * 0.25),
+      anchor("center"),
+      color(135, 206, 250), // Light Sky Blue
+      outline(8, rgb(0, 0, 0)),
+    ]);
+
+    // Subtitle
+    add([
+      text("A Phishing Awareness Adventure", { size: 24 }),
+      pos(width() / 2, height() * 0.35),
+      anchor("center"),
+      color(210, 230, 255),
+    ]);
+
+    // Glowing pad under buttons
+    const pad = add([
+      rect(460, 160),
+      pos(width() / 2, height() * 0.6 + 10),
+      color(16, 22, 46),
+      outline(3, rgb(70, 120, 210)),
+      anchor("center"),
+    ]);
+
+    function menuButton(cfg) {
+      const btn = add([
+        rect(200, 56),
+        pos(cfg.x, cfg.y),
+        color(cfg.bg[0], cfg.bg[1], cfg.bg[2]),
+        outline(3, rgb(10, 10, 30)),
+        anchor("center"),
+        area(),
+        scale(1),
+        cfg.tag,
+      ]);
+      add([
+        text(cfg.label, { size: 24 }),
+        pos(cfg.x, cfg.y),
+        anchor("center"),
+        color(0, 0, 0),
+      ]);
+      return btn;
+    }
+
+    menuButton({
+      x: width() / 2,
+      y: height() * 0.55,
+      bg: [190, 245, 200],
+      label: "START",
+      tag: "menu-start",
+    });
+
+    menuButton({
+      x: width() / 2,
+      y: height() * 0.65,
+      bg: [240, 200, 190],
+      label: "QUIT",
+      tag: "menu-quit",
+    });
+
+    add([
+      text("Press ENTER to Start   P: Progress Report", { size: 18 }),
+      pos(width() / 2, height() * 0.75),
+      anchor("center"),
+      color(200, 210, 240),
+    ]);
+
+    add([
+      text("Tip: Real attacks often feel urgent and unexpected.", { size: 16 }),
+      pos(width() / 2, height() * 0.82),
+      anchor("center"),
+      color(180, 200, 255),
+    ]);
+
+    // Hover effects with color + slight scale
+    onHover("menu-start", (b) => {
+      b.color = rgb(210, 255, 210);
+      b.scale = vec2(1.06, 1.06);
+    }, (b) => {
+      b.color = rgb(190, 245, 200);
+      b.scale = vec2(1, 1);
+    });
+
+    onHover("menu-quit", (b) => {
+      b.color = rgb(255, 220, 210);
+      b.scale = vec2(1.06, 1.06);
+    }, (b) => {
+      b.color = rgb(240, 200, 190);
+      b.scale = vec2(1, 1);
+    });
+
+    // Click handlers
+    onClick("menu-start", () => {
+      playUiClickSfx();
+      go("room");
+    });
+
+    onClick("menu-quit", () => {
+      playUiClickSfx();
+      go("quit");
+    });
+
+    // Keyboard shortcuts
+    onKeyPress("enter", () => {
+      playUiClickSfx();
+      go("room");
+    });
+    onKeyPress("escape", () => {
+      go("quit");
+    });
+
+    onKeyPress("p", () => {
+      playUiClickSfx();
+      go("report");
+    });
+  });
+
+  // Simple quit/thanks screen
+  scene("quit", () => {
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(5, 5, 12),
+      fixed(),
+      z(-10),
+    ]);
+
+    add([
+      text("Thanks for playing CYBER BIT", { size: 32 }),
+      pos(width() / 2, height() / 2 - 20),
+      anchor("center"),
+      color(220, 235, 255),
+    ]);
+
+    add([
+      text("You can close the tab or press M to return to the menu.", { size: 18 }),
+      pos(width() / 2, height() / 2 + 30),
+      anchor("center"),
+      color(190, 200, 230),
+    ]);
+
+    onKeyPress("m", () => {
+      go("menu");
+    });
+  });
+
+  // --- FURNITURE PREFABS ---
+  function makeBed(x, y, w, h) {
+    // Bed Frame
+    add([
+      rect(w, h, { radius: 4 }),
+      pos(x, y),
+      color(140, 100, 70),
+      outline(2, rgb(80, 50, 30)),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    // Mattress
+    add([
+      rect(w - 10, h - 10, { radius: 4 }),
+      pos(x, y),
+      color(230, 230, 245),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    // Pillow
+    add([
+      rect(50, 30, { radius: 8 }),
+      pos(x - w / 2 + 40, y),
+      color(255, 255, 255),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    // Blanket (partial cover)
+    add([
+      rect(w * 0.6, h - 10, { radius: 4 }),
+      pos(x + w * 0.2 - 5, y),
+      color(100, 120, 200),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+  }
+
+  function makeDesk(x, y, w, h) {
+    // Desk Surface
+    add([
+      rect(w, h, { radius: 4 }),
+      pos(x, y),
+      color(160, 120, 80),
+      outline(2, rgb(90, 60, 40)),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    // Legs (visual only)
+    add([
+      rect(10, h + 20),
+      pos(x - w / 2 + 10, y + 10),
+      color(140, 100, 60),
+      anchor("center"),
+      z(Z.FURNITURE_BASE),
+    ]);
+    add([
+      rect(10, h + 20),
+      pos(x + w / 2 - 10, y + 10),
+      color(140, 100, 60),
+      anchor("center"),
+      z(Z.FURNITURE_BASE),
+    ]);
+  }
+
+  function makeChest(x, y, w, h) {
+    add([
+      rect(w, h, { radius: 2 }),
+      pos(x, y),
+      color(150, 110, 70),
+      outline(2, rgb(90, 60, 40)),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    // Drawers
+    for (let i = -1; i <= 1; i++) {
+      const yy = y + i * (h / 3.5);
+      add([
+        rect(w - 12, h / 4, { radius: 2 }),
+        pos(x, yy),
+        color(130, 90, 50),
+        anchor("center"),
+        z(Z.FURNITURE),
+      ]);
+      add([
+        circle(3),
+        pos(x, yy),
+        color(240, 220, 180),
+        anchor("center"),
+        z(Z.FURNITURE),
+      ]);
+    }
+  }
+
+  function makeNightstand(x, y, w, h) {
+    add([
+      rect(w, h, { radius: 2 }),
+      pos(x, y),
+      color(150, 110, 70),
+      outline(2, rgb(90, 60, 40)),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    add([
+      rect(w - 10, h / 2 - 5, { radius: 2 }),
+      pos(x, y - h / 4),
+      color(130, 90, 50),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    add([
+      circle(2),
+      pos(x, y - h / 4),
+      color(240, 220, 180),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+  }
+
+  function makeRug(x, y, w, h) {
+    add([
+      rect(w, h, { radius: 8 }),
+      pos(x, y),
+      color(60, 80, 140),
+      anchor("center"),
+      z(Z.FLOOR),
+    ]);
+    // Pattern
+    add([
+      rect(w - 20, h - 20, { radius: 4 }),
+      pos(x, y),
+      color(70, 90, 150),
+      anchor("center"),
+      z(Z.FLOOR),
+    ]);
+  }
+
+  // ------------ Scene 1: The Room (Exploration) ------------ //
+  scene("room", () => {
+    addSceneFadeIn();
+    drawTopHud();
+
+    // --- LAYOUT CONSTANTS ---
+    const WALL_THICKNESS = 24;
+    const ROOM_PADDING = 20;
+    const SIDEBAR_WIDTH = 240;
+    const PLAY_AREA_W = width() - SIDEBAR_WIDTH;
+    const PLAY_AREA_H = height();
+
+    // Background (Floor)
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(UI_PALETTE.bg),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    // Floor Tiles / Pattern
+    const tileSize = 64;
+    for (let x = 0; x < width(); x += tileSize) {
+      for (let y = 0; y < height(); y += tileSize) {
+        if ((Math.floor(x / tileSize) + Math.floor(y / tileSize)) % 2 === 0) {
+          add([
+            rect(tileSize, tileSize),
+            pos(x, y),
+            color(10, 14, 30),
+            fixed(),
+            z(Z.BG),
+          ]);
+        }
+      }
+    }
+
+    // Walls
+    const wallColor = color(30, 35, 70);
+    // Top Wall (below HUD)
+    add([rect(width(), WALL_THICKNESS), pos(0, TOP_HUD_HEIGHT), wallColor, fixed(), z(Z.BG)]);
+    // Bottom Wall
+    add([rect(width(), WALL_THICKNESS), pos(0, height() - WALL_THICKNESS), wallColor, fixed(), z(Z.BG)]);
+    // Left Wall
+    add([rect(WALL_THICKNESS, height()), pos(0, 0), wallColor, fixed(), z(Z.BG)]);
+    // Right Wall (separator for sidebar)
+    add([rect(WALL_THICKNESS, height()), pos(PLAY_AREA_W, 0), wallColor, fixed(), z(Z.BG)]);
+
+    // Carpet
+    const carpetW = PLAY_AREA_W * 0.5;
+    const carpetH = PLAY_AREA_H * 0.5;
+    const carpetX = PLAY_AREA_W / 2;
+    const carpetY = PLAY_AREA_H * 0.6;
+    makeRug(carpetX, carpetY, carpetW, carpetH);
+
+    // Furniture Placement
+    const bedW = 200;
+    const bedH = 120;
+    const bedX = WALL_THICKNESS + bedW / 2 + ROOM_PADDING;
+    const bedY = TOP_HUD_HEIGHT + WALL_THICKNESS + bedH / 2 + 40;
+    makeBed(bedX, bedY, bedW, bedH);
+
+    const nightW = 60;
+    const nightH = 60;
+    const nightX = bedX + bedW / 2 + nightW / 2 + 10;
+    const nightY = bedY - bedH / 2 + nightH / 2;
+    makeNightstand(nightX, nightY, nightW, nightH);
+
+    const deskW = 220;
+    const deskH = 80;
+    const deskX = PLAY_AREA_W / 2;
+    const deskY = TOP_HUD_HEIGHT + WALL_THICKNESS + deskH / 2 + 20;
+    makeDesk(deskX, deskY, deskW, deskH);
+
+    const chestW = 120;
+    const chestH = 100;
+    const chestX = WALL_THICKNESS + chestW / 2 + ROOM_PADDING;
+    const chestY = height() - WALL_THICKNESS - chestH / 2 - ROOM_PADDING;
+    makeChest(chestX, chestY, chestW, chestH);
+
+    // Plant
+    add([
+      rect(20, 30),
+      pos(PLAY_AREA_W - WALL_THICKNESS - 40, height() - WALL_THICKNESS - 40),
+      color(120, 80, 40),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+    add([
+      circle(20),
+      pos(PLAY_AREA_W - WALL_THICKNESS - 40, height() - WALL_THICKNESS - 60),
+      color(40, 160, 80),
+      anchor("center"),
+      z(Z.FURNITURE),
+    ]);
+
+    // Posters
+    function poster(x, y, w, h, main, sub) {
+      add([
+        rect(w, h),
+        pos(x, y),
+        color(60, 90, 160),
+        outline(2, rgb(20, 20, 50)),
+        anchor("center"),
+        z(Z.BG),
+      ]);
+      add([
+        text(main, { size: 14 }),
+        pos(x, y - 8),
+        anchor("center"),
+        color(255, 255, 255),
+        z(Z.BG),
+      ]);
+    }
+    // poster(PLAY_AREA_W - 100, TOP_HUD_HEIGHT + 60, 80, 100, "CYBER", "SAFE");
+
+    // Player: small kid avatar (head + body) instead of a plain square
+    // Backpack (behind body)
+    const playerBackpack = add([
+      rect(28, 22, { radius: 4 }),
+      pos(PLAY_AREA_W / 2, height() * 0.75),
+      color(60, 60, 70),
+      anchor("center"),
+      z(Z.PLAYER - 1),
+    ]);
+
+    const player = add([
+      rect(24, 28, { radius: 6 }),
+      pos(PLAY_AREA_W / 2, height() * 0.75),
+      color(0, 160, 255), // Brighter blue hoodie
+      area(),
+      anchor("center"),
+      z(Z.PLAYER),
+      "player",
+    ]);
+    const playerHead = add([
+      circle(13),
+      pos(player.pos.x, player.pos.y - 22),
+      color(255, 220, 190),
+      anchor("center"),
+      z(5),
+    ]);
+    const playerHair = add([
+      rect(28, 12, { radius: 4 }),
+      pos(player.pos.x, player.pos.y - 32),
+      color(60, 40, 20),
+      anchor("center"),
+      z(6),
+    ]);
+    const eyeOffset = 5;
+    const leftEye = add([
+      rect(3, 3),
+      pos(player.pos.x - eyeOffset, player.pos.y - 22),
+      color(0, 0, 0),
+      anchor("center"),
+      z(6),
+    ]);
+    const rightEye = add([
+      rect(3, 3),
+      pos(player.pos.x + eyeOffset, player.pos.y - 22),
+      color(0, 0, 0),
+      anchor("center"),
+      z(6),
+    ]);
+
+    // HUD bar at the bottom with controls & status
+    const hudHeight = 64;
+    add([
+      rect(width(), hudHeight),
+      pos(0, height() - hudHeight),
+      color(8, 10, 24),
+      fixed(),
+      z(20),
+    ]);
+    add([
+      text("Arrows: Move   SPACE: Inspect   R: Restart Room", { size: 18 }),
+      pos(24, height() - hudHeight + 18),
+      color(220, 220, 230),
+      fixed(),
+      z(21),
+    ]);
+    add([
+      text("Goal: Spot phishing on every device.", { size: 16 }),
+      pos(24, height() - hudHeight + 38),
+      color(180, 210, 255),
+      fixed(),
+      z(21),
+    ]);
+
+    // Sidebar on the right listing devices & their notifications
+    const sidebarWidth = 240;
+    const sidebarLabels = {};
+
+    add([
+      rect(sidebarWidth, height() - hudHeight),
+      pos(width() - sidebarWidth, 0),
+      color(10, 14, 32),
+      outline(3, rgb(40, 70, 140)),
+      anchor("topleft"),
+      fixed(),
+      z(15),
+    ]);
+
+    const sidebarTitleY = 32;
+    add([
+      text("Devices", { size: 20 }),
+      pos(width() - sidebarWidth + 20, sidebarTitleY),
+      color(210, 225, 255),
+      fixed(),
+      z(16),
+    ]);
+
+    const deviceOrder = ["phone", "tablet", "computer"];
+    const deviceNames = {
+      phone: "Phone",
+      tablet: "Tablet",
+      computer: "Computer",
+    };
+
+    deviceOrder.forEach((id, index) => {
+      const baseY = sidebarTitleY + 40 + index * 110;
+      const centerX = width() - sidebarWidth / 2;
+
+      // Clickable row background
+      add([
+        rect(sidebarWidth - 24, 80),
+        pos(centerX, baseY + 24),
+        color(14, 18, 40),
+        outline(2, rgb(32, 50, 100)),
+        anchor("center"),
+        fixed(),
+        area(),
+        "sidebar-device",
+        {
+          deviceId: id,
+        },
+        z(16),
+      ]);
+
+      // Small device icon
+      if (id === "phone") {
+        add([
+          rect(18, 34),
+          pos(width() - sidebarWidth + 24, baseY + 24),
+          color(30, 30, 42),
+          outline(2, rgb(200, 200, 220)),
+          anchor("center"),
+          fixed(),
+          z(17),
+        ]);
+      } else if (id === "tablet") {
+        add([
+          rect(32, 24),
+          pos(width() - sidebarWidth + 26, baseY + 24),
+          color(32, 32, 44),
+          outline(2, rgb(210, 210, 225)),
+          anchor("center"),
+          fixed(),
+          z(17),
+        ]);
+      } else if (id === "computer") {
+        add([
+          rect(30, 18),
+          pos(width() - sidebarWidth + 26, baseY + 18),
+          color(40, 60, 90),
+          outline(2, rgb(210, 220, 240)),
+          anchor("center"),
+          fixed(),
+          z(17),
+        ]);
+        add([
+          rect(20, 6),
+          pos(width() - sidebarWidth + 26, baseY + 32),
+          color(30, 40, 60),
+          anchor("center"),
+          fixed(),
+          z(17),
+        ]);
+      }
+
+      add([
+        text(deviceNames[id], { size: 18 }),
+        pos(width() - sidebarWidth + 52, baseY + 6),
+        color(220, 230, 255),
+        fixed(),
+        z(17),
+      ]);
+
+      const label = add([
+        text("No alerts", { size: 14 }),
+        pos(width() - sidebarWidth + 52, baseY + 32),
+        color(170, 190, 220),
+        fixed(),
+        z(17),
+      ]);
+
+      sidebarLabels[id] = label;
+    });
+
+    // Interactive devices in the room
+    const interactables = [];
+
+    function createDevice(cfg) {
+      const deviceY = cfg.y;
+
+      if (cfg.id === "computer") {
+        // Monitor Stand
+        add([
+          rect(40, 12),
+          pos(cfg.x, deviceY + 35),
+          color(60, 70, 100),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+        add([
+          rect(12, 20),
+          pos(cfg.x, deviceY + 25),
+          color(50, 60, 90),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+        // Monitor Frame
+        add([
+          rect(140, 90, { radius: 4 }),
+          pos(cfg.x, deviceY - 10),
+          color(40, 44, 55),
+          outline(2, rgb(20, 20, 30)),
+          anchor("center"),
+          area(), // Make monitor clickable
+          { deviceId: cfg.id, deviceName: cfg.label },
+          z(Z.DEVICES),
+        ]);
+        // Screen
+        add([
+          rect(128, 78, { radius: 2 }),
+          pos(cfg.x, deviceY - 10),
+          color(10, 15, 25),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+        // Screen Glare/Reflection (subtle)
+        add([
+          rect(128, 30, { radius: 2 }),
+          pos(cfg.x, deviceY - 34),
+          color(255, 255, 255),
+          opacity(0.05),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+        // Power Light
+        add([
+          circle(2),
+          pos(cfg.x + 60, deviceY + 28),
+          color(0, 255, 100),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+        // Keyboard
+        add([
+          rect(100, 30, { radius: 2 }),
+          pos(cfg.x, deviceY + 60),
+          color(50, 55, 70),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+      } else if (cfg.id === "phone") {
+        // Phone Body
+        add([
+          rect(40, 70, { radius: 6 }),
+          pos(cfg.x, deviceY),
+          color(20, 20, 25),
+          outline(2, rgb(180, 180, 200)),
+          anchor("center"),
+          area(),
+          { deviceId: cfg.id, deviceName: cfg.label },
+          z(Z.DEVICES),
+        ]);
+        // Screen
+        add([
+          rect(34, 60, { radius: 2 }),
+          pos(cfg.x, deviceY),
+          color(5, 10, 20),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+        // Home Button
+        add([
+          circle(3),
+          pos(cfg.x, deviceY + 28),
+          color(50, 50, 60),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+      } else if (cfg.id === "tablet") {
+        // Tablet Body
+        add([
+          rect(90, 64, { radius: 6 }),
+          pos(cfg.x, deviceY),
+          color(30, 30, 40),
+          outline(2, rgb(200, 200, 210)),
+          anchor("center"),
+          area(),
+          { deviceId: cfg.id, deviceName: cfg.label },
+          z(Z.DEVICES),
+        ]);
+        // Screen
+        add([
+          rect(80, 54, { radius: 2 }),
+          pos(cfg.x, deviceY),
+          color(10, 15, 30),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+        // Camera
+        add([
+          circle(2),
+          pos(cfg.x, deviceY - 28),
+          color(20, 20, 20),
+          anchor("center"),
+          z(Z.DEVICES),
+        ]);
+      }
+      
+      // Label text under device
+      add([
+        text(cfg.label, { size: 14 }),
+        pos(cfg.x, cfg.y + 80),
+        anchor("center"),
+        color(UI_PALETTE.textDim),
+        z(Z.DEVICES),
+      ]);
+
+      interactables.push({
+        deviceId: cfg.id,
+        label: cfg.label,
+        pos: vec2(cfg.x, deviceY),
+        radius: cfg.radius || 80
+      });
+    }
+
+    // Computer desk (center)
+    createDevice({
+      id: "computer",
+      label: "Computer",
+      x: deskX,
+      y: deskY - 20,
+    });
+
+    // Phone (on chest)
+    createDevice({
+      id: "phone",
+      label: "Phone",
+      x: chestX,
+      y: chestY - 20,
+      radius: 100,
+    });
+
+    // Tablet (on nightstand)
+    createDevice({
+      id: "tablet",
+      label: "Tablet",
+      x: nightX,
+      y: nightY - 10,
+      radius: 100,
+    });
+
+    // Visual notification nodes for this room instance (logic is global)
+    const activeVisuals = {};
+
+    function getBadgeOffset(deviceId) {
+      if (deviceId === "phone") return vec2(22, -24);
+      if (deviceId === "computer") return vec2(70, -32);
+      if (deviceId === "tablet") return vec2(45, -30);
+      return vec2(24, -24);
+    }
+
+    function spawnNotificationFromEntry(entryData) {
+      const entry = interactables.find((e) => e.deviceId === entryData.deviceId);
+      if (!entry) return null;
+
+      const off = getBadgeOffset(entryData.deviceId);
+      const badgePos = vec2(entry.pos.x + off.x, entry.pos.y + off.y);
+
+      const badge = add([
+        circle(12),
+        pos(badgePos),
+        color(255, 50, 50),
+        outline(2, rgb(255, 255, 255)),
+        anchor("center"),
+        z(Z.UI_BASE + 10),
+        "notification-badge"
+      ]);
+      
+      const badgeText = add([
+        text("!", { size: 16, font: "monospace", weight: "bold" }),
+        pos(badgePos),
+        anchor("center"),
+        color(255, 255, 255),
+        z(Z.UI_BASE + 11),
+      ]);
+
+      // Pulse effect
+      onUpdate(() => {
+        if (badge.exists()) {
+          const s = 1 + Math.sin(time() * 10) * 0.1;
+          badge.scale = vec2(s);
+          badgeText.scale = vec2(s);
+        }
+      });
+
+      // Toast snackbar in the top-right, per-device vertical band
+      const toastW = 340;
+      const toastH = 84;
+      const toastX = width() - sidebarWidth - 16 - toastW / 2;
+      // Start noticeably below the top HUD so they never overlap
+      const baseY = 120;
+      const gap = toastH + 18;
+      const deviceIndex = entryData.deviceId === "phone" ? 0 : entryData.deviceId === "tablet" ? 1 : 2;
+      const toastY = baseY + deviceIndex * gap;
+      
+      const toast = add([
+        rect(toastW, toastH, { radius: 8 }),
+        pos(toastX, toastY),
+        color(UI_PALETTE.primary),
+        outline(2, UI_PALETTE.highlight),
+        anchor("center"),
+        area(),
+        fixed(),
+        "notif-toast",
+        {
+          notifDeviceId: entryData.deviceId,
+        },
+        z(Z.UI_BASE + 20),
+      ]);
+      
+      const toastTitle = add([
+        text(`New ${entryData.app} alert on ${entryData.deviceId}`, { size: 16 }),
+        pos(toastX - toastW / 2 + 12, toastY - 18),
+        color(230, 240, 255),
+        fixed(),
+        z(Z.UI_BASE + 21),
+      ]);
+      
+      const toastBody = add([
+        text(entryData.preview, { size: 14 }),
+        pos(toastX - toastW / 2 + 12, toastY + 6),
+        color(200, 220, 255),
+        fixed(),
+        z(Z.UI_BASE + 21),
+      ]);
+
+      // Update sidebar label
+      if (sidebarLabels[entryData.deviceId]) {
+        sidebarLabels[entryData.deviceId].text = `${entryData.title} (${entryData.app})`;
+        sidebarLabels[entryData.deviceId].color = rgb(230, 240, 255);
+      }
+
+      activeVisuals[entryData.deviceId] = { badge, badgeText, toast, toastTitle, toastBody };
+
+      // Auto-hide visual badge + toast after 5 seconds (logical state stays)
+      // wait(5, () => {
+      //   const visuals = activeVisuals[entryData.deviceId];
+      //   if (!visuals) return;
+      //   if (visuals.badge) destroy(visuals.badge);
+      //   if (visuals.badgeText) destroy(visuals.badgeText);
+      //   if (visuals.toast) destroy(visuals.toast);
+      //   if (visuals.toastTitle) destroy(visuals.toastTitle);
+      //   if (visuals.toastBody) destroy(visuals.toastBody);
+      //   delete activeVisuals[entryData.deviceId];
+      // });
+
+      // Play a short sound when a new notification appears
+      playNotificationSfx();
+
+      return { badge, toast };
+    }
+
+    function spawnNotification(def) {
+      const scenario = nextScenario(def.deviceId);
+      const entryData = {
+        deviceId: def.deviceId,
+        app: def.app,
+        title: def.title,
+        preview: def.preview,
+        scenario,
+      };
+      notificationLogic.devices[def.deviceId] = entryData;
+      return spawnNotificationFromEntry(entryData);
+    }
+
+    function rebuildNotificationsFromLogic() {
+      for (const deviceId in notificationLogic.devices) {
+        const entryData = notificationLogic.devices[deviceId];
+        if (!entryData) continue;
+        spawnNotificationFromEntry(entryData);
+      }
+    }
+
+    function scheduleRandomNotification(minDelay, maxDelay) {
+      wait(rand(minDelay, maxDelay), () => {
+        // Choose a notification template whose device has no active alert yet
+        const candidates = NOTIFICATION_DEFS.filter((d) => !notificationLogic.devices[d.deviceId]);
+        if (candidates.length === 0) return;
+        const idx = Math.floor(rand(0, candidates.length));
+        const def = candidates[idx];
+        spawnNotification(def);
+      });
+    }
+
+    // Rebuild any existing notifications for this session
+    rebuildNotificationsFromLogic();
+
+    // Schedule several notifications at random times on different devices (slower cadence)
+    scheduleRandomNotification(10, 18);
+    scheduleRandomNotification(22, 32);
+    scheduleRandomNotification(34, 48);
+
+    // Player movement
+    onKeyDown("left", () => {
+      player.move(-PLAYER_SPEED, 0);
+    });
+    onKeyDown("right", () => {
+      player.move(PLAYER_SPEED, 0);
+    });
+    onKeyDown("up", () => {
+      player.move(0, -PLAYER_SPEED);
+    });
+    onKeyDown("down", () => {
+      player.move(0, PLAYER_SPEED);
+    });
+
+    // Allow quick room reset
+    onKeyPress("r", () => {
+      go("room");
+    });
+
+    let activeInteraction = null;
+    let promptText = null;
+
+    // Helper to open the appropriate device UI
+    function openDevice(deviceId) {
+      const dataEntry = notificationLogic.devices[deviceId] || null;
+      const scenario = dataEntry
+        ? dataEntry.scenario
+        : nextScenario(deviceId);
+      const notification = dataEntry
+        ? { deviceId: dataEntry.deviceId, app: dataEntry.app, scenario: dataEntry.scenario }
+        : null;
+      if (deviceId === "phone") {
+        go("device-phone", { notification, scenario });
+      } else if (deviceId === "computer") {
+        go("device-computer", { notification, scenario });
+      } else if (deviceId === "tablet") {
+        go("device-tablet", { notification, scenario });
+      }
+    }
+
+    // Update loop: clamp player, sync player visuals, and handle nearest device prompt
+    onUpdate(() => {
+      const margin = WALL_THICKNESS + 20;
+      player.pos.x = Math.max(margin, Math.min(width() - sidebarWidth - 20, player.pos.x));
+      player.pos.y = Math.max(margin, Math.min(height() - margin - 10, player.pos.y));
+
+       // Keep head and hair attached to the body
+       playerBackpack.pos = vec2(player.pos.x, player.pos.y);
+       playerHead.pos = vec2(player.pos.x, player.pos.y - 22);
+       playerHair.pos = vec2(player.pos.x, player.pos.y - 32);
+       leftEye.pos = vec2(player.pos.x - eyeOffset, player.pos.y - 22);
+       rightEye.pos = vec2(player.pos.x + eyeOffset, player.pos.y - 22);
+
+      let nearest = null;
+      let nearestDist = 99999;
+
+      for (const entry of interactables) {
+        const d = dist(player.pos, entry.pos);
+        if (d < entry.radius && d < nearestDist) {
+          nearest = entry;
+          nearestDist = d;
+        }
+      }
+
+      if (nearest) {
+        if (!activeInteraction || activeInteraction.deviceId !== nearest.deviceId) {
+          activeInteraction = nearest;
+          if (promptText) destroy(promptText);
+          promptText = add([
+            text("SPACE: Inspect " + nearest.label, { size: 22 }),
+            pos(width() / 2, height() - hudHeight - 24),
+            anchor("center"),
+            color(255, 240, 160),
+            z(22),
+          ]);
+        }
+      } else {
+        activeInteraction = null;
+        if (promptText) {
+          destroy(promptText);
+          promptText = null;
+        }
+      }
+    });
+
+    // Interact with the nearest device
+    onKeyPress("space", () => {
+      if (!activeInteraction) return;
+      playUiClickSfx();
+      openDevice(activeInteraction.deviceId);
+    });
+
+    // Clicking any toast jumps into that device's UI
+    onClick("notif-toast", (toast) => {
+      if (!toast || !toast.notifDeviceId) return;
+      playUiClickSfx();
+      openDevice(toast.notifDeviceId);
+    });
+
+    // Clicking a device in the sidebar also opens its UI
+    onClick("sidebar-device", (row) => {
+      if (!row || !row.deviceId) return;
+      playUiClickSfx();
+      openDevice(row.deviceId);
+    });
+  });
+
+  // --- ICON HELPERS ---
+  function makeAppIcon(x, y, size, colorVal, glyph) {
+    // Icon Background
+    add([
+      rect(size, size, { radius: size * 0.2 }),
+      pos(x, y),
+      color(colorVal),
+      anchor("center"),
+      z(Z.UI_BASE),
+    ]);
+    
+    // Icon Glyph (simplified)
+    if (glyph === "Mail") {
+      add([
+        rect(size * 0.6, size * 0.4, { radius: 2 }),
+        pos(x, y),
+        color(255, 255, 255),
+        anchor("center"),
+        z(Z.UI_BASE),
+      ]);
+      // Envelope flap hint
+      add([
+        rect(size * 0.6, size * 0.2),
+        pos(x, y),
+        color(200, 200, 220),
+        anchor("center"),
+        rotate(45),
+        z(Z.UI_BASE),
+      ]);
+    } else if (glyph === "Browser") {
+      add([
+        circle(size * 0.3),
+        pos(x, y),
+        color(255, 255, 255),
+        anchor("center"),
+        z(Z.UI_BASE),
+      ]);
+      add([
+        rect(size * 0.7, 2),
+        pos(x, y),
+        color(colorVal),
+        anchor("center"),
+        z(Z.UI_BASE),
+      ]);
+    } else if (glyph === "Messages") {
+      add([
+        rect(size * 0.6, size * 0.45, { radius: 4 }),
+        pos(x, y - 2),
+        color(255, 255, 255),
+        anchor("center"),
+        z(Z.UI_BASE),
+      ]);
+      add([
+        rect(8, 8),
+        pos(x - size * 0.15, y + size * 0.2),
+        color(255, 255, 255),
+        anchor("center"),
+        rotate(45),
+        z(Z.UI_BASE),
+      ]);
+    } else if (glyph === "Phone") {
+       add([
+        rect(size * 0.25, size * 0.6, { radius: 2 }),
+        pos(x, y),
+        color(255, 255, 255),
+        anchor("center"),
+        z(Z.UI_BASE),
+      ]);
+    }
+  }
+
+  // ------------ Device UI: Phone Home Screen ------------ //
+  scene("device-phone", (data) => {
+    addSceneFadeIn();
+    drawTopHud();
+
+    const notification = data && data.notification ? data.notification : null;
+    const scenario = data && data.scenario ? data.scenario : nextScenario("phone");
+    const highlightedApp = notification ? notification.app : null;
+
+    // Background
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(UI_PALETTE.bg),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    // Phone frame in the center
+    const phoneW = 320;
+    const phoneH = 580;
+    const phoneX = width() / 2;
+    const phoneY = height() / 2 + 20;
+
+    add([
+      rect(phoneW, phoneH, { radius: 32 }),
+      pos(phoneX, phoneY),
+      color(20, 20, 28),
+      outline(4, rgb(60, 60, 80)),
+      anchor("center"),
+      z(Z.DEVICES),
+    ]);
+    // Screen area
+    add([
+      rect(phoneW - 24, phoneH - 24, { radius: 28 }),
+      pos(phoneX, phoneY),
+      color(10, 15, 25), // Dark wallpaper
+      anchor("center"),
+      z(Z.DEVICES),
+    ]);
+
+    // Status bar
+    add([
+      rect(phoneW - 60, 24, { radius: 12 }),
+      pos(phoneX, phoneY - phoneH / 2 + 24),
+      color(0, 0, 0),
+      anchor("center"),
+      z(Z.DEVICES),
+    ]);
+
+    // Home indicator
+    add([
+      rect(100, 4, { radius: 2 }),
+      pos(phoneX, phoneY + phoneH / 2 - 20),
+      color(200, 200, 200),
+      anchor("center"),
+      z(Z.DEVICES),
+    ]);
+
+    // App icons grid
+    const apps = [
+      { id: "Messages", label: "Messages", col: 0, row: 0, color: rgb(80, 200, 120) },
+      { id: "Mail", label: "Mail", col: 1, row: 0, color: rgb(90, 160, 255) },
+      { id: "Phone", label: "Phone", col: 0, row: 1, color: rgb(60, 200, 140) },
+      { id: "Browser", label: "Browser", col: 1, row: 1, color: rgb(255, 200, 120) },
+    ];
+
+    const gridOriginX = phoneX - 80;
+    const gridOriginY = phoneY - 100;
+    const cellW = 80;
+    const cellH = 90;
+
+    apps.forEach((app) => {
+      const x = gridOriginX + app.col * cellW;
+      const y = gridOriginY + app.row * cellH;
+
+      // Clickable area
+      add([
+        rect(64, 64, { radius: 12 }),
+        pos(x, y),
+        color(0, 0, 0),
+        opacity(0),
+        anchor("center"),
+        area(),
+        "phone-app",
+        {
+          appId: app.id,
+        },
+        z(Z.UI_BASE + 10),
+      ]);
+
+      makeAppIcon(x, y, 56, app.color, app.id);
+
+      add([
+        text(app.label, { size: 12 }),
+        pos(x, y + 42),
+        anchor("center"),
+        color(225, 235, 245),
+        z(Z.UI_BASE),
+      ]);
+
+
+
+      // Notification badge on the highlighted app, if any
+      if (highlightedApp && app.id === highlightedApp) {
+        add([
+          circle(9),
+          pos(x + 22, y - 22),
+          color(230, 40, 40),
+          anchor("center"),
+        ]);
+        add([
+          text("1", { size: 12 }),
+          pos(x + 22, y - 22),
+          anchor("center"),
+          color(255, 255, 255),
+        ]);
+      }
+    });
+
+    add([
+      text("Phone - Tap the app with a badge.", { size: 20 }),
+      pos(width() / 2, phoneY - phoneH / 2 - 40),
+      anchor("center"),
+      color(210, 220, 240),
+    ]);
+
+    add([
+      text("ESC: Back to room", { size: 16 }),
+      pos(width() / 2, phoneY + phoneH / 2 + 24),
+      anchor("center"),
+      color(190, 200, 220),
+    ]);
+
+    let infoText = add([
+      text("", { size: 16 }),
+      pos(width() / 2, phoneY + phoneH / 2 + 48),
+      anchor("center"),
+      color(220, 220, 240),
+    ]);
+
+    onClick("phone-app", (icon) => {
+      const appId = icon.appId;
+      if (highlightedApp && appId === highlightedApp) {
+        playUiClickSfx();
+        go("scenario", {
+          scenario,
+          sourceDevice: "Phone",
+          sourceApp: appId,
+        });
+      } else {
+        infoText.text = "No suspicious notifications in this app.";
+      }
+    });
+
+    onKeyPress("escape", () => {
+      go("room");
+    });
+  });
+
+  // ------------ Device UI: Computer Desktop ------------ //
+  scene("device-computer", (data) => {
+    addSceneFadeIn();
+    drawTopHud();
+
+    const notification = data && data.notification ? data.notification : null;
+    const scenario = data && data.scenario ? data.scenario : nextScenario("computer");
+    const highlightedApp = notification ? notification.app : null;
+
+    // Background
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(UI_PALETTE.bg),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    // Desktop background panel
+    add([
+      rect(width() - 60, height() - 80, { radius: 8 }),
+      pos(30, 30),
+      color(20, 80, 140),
+      anchor("topleft"),
+      z(Z.DEVICES),
+    ]);
+
+    // Taskbar
+    add([
+      rect(width() - 60, 40, { radius: 4 }),
+      pos(30, height() - 70),
+      anchor("topleft"),
+      color(10, 30, 60),
+      z(Z.DEVICES),
+    ]);
+
+    // Start Button
+    add([
+      rect(30, 30, { radius: 4 }),
+      pos(50, height() - 50),
+      anchor("center"),
+      color(0, 120, 215),
+      z(Z.DEVICES),
+    ]);
+
+    // Desktop icons on left side
+    const desktopApps = [
+      { id: "Mail", label: "Mail", yOff: 0, color: rgb(90, 160, 255) },
+      { id: "Browser", label: "Browser", yOff: 90, color: rgb(255, 200, 120) },
+      { id: "Social", label: "Social", yOff: 180, color: rgb(200, 100, 200) },
+    ];
+
+    const iconsX = 100;
+    const iconsY = 100;
+
+    desktopApps.forEach((app) => {
+      const y = iconsY + app.yOff;
+
+      // Clickable area
+      add([
+        rect(64, 64, { radius: 8 }),
+        pos(iconsX, y),
+        color(255, 255, 255),
+        opacity(0.1),
+        anchor("center"),
+        area(),
+        "pc-app",
+        {
+          appId: app.id,
+        },
+        z(Z.UI_BASE),
+      ]);
+
+      makeAppIcon(iconsX, y, 48, app.color, app.id);
+
+      add([
+        text(app.label, { size: 14 }),
+        pos(iconsX, y + 40),
+        anchor("center"),
+        color(225, 235, 245),
+        z(Z.UI_BASE),
+      ]);
+
+      // Notification badge
+      if (highlightedApp === app.id) {
+        add([
+          circle(10),
+          pos(iconsX + 20, y - 20),
+          color(255, 50, 50),
+          anchor("center"),
+          z(Z.UI_BASE + 5),
+        ]);
+        add([
+          text("!", { size: 14 }),
+          pos(iconsX + 20, y - 20),
+          anchor("center"),
+          color(255, 255, 255),
+          z(Z.UI_BASE + 6),
+        ]);
+      }
+    });
+
+    let infoText = add([
+      text("Click an icon to open", { size: 18 }),
+      pos(width() / 2, height() / 2),
+      anchor("center"),
+      color(220, 220, 240),
+      z(Z.UI_BASE),
+    ]);
+
+    onClick("pc-app", (icon) => {
+      playUiClickSfx();
+      if (icon.appId === highlightedApp) {
+        go("scenario", { scenario, sourceDevice: "computer", sourceApp: icon.appId });
+      } else {
+        infoText.text = "No new alerts in " + icon.appId;
+        wait(1.5, () => {
+           infoText.text = "Click an icon to open";
+        });
+      }
+    });
+
+    onKeyPress("escape", () => {
+      go("room");
+    });
+  });
+
+  // ------------ Device UI: Tablet / iPad-like Home Screen ------------ //
+  scene("device-tablet", (data) => {
+    addSceneFadeIn();
+    drawTopHud();
+
+    const notification = data && data.notification ? data.notification : null;
+    const scenario = data && data.scenario ? data.scenario : nextScenario("tablet");
+    const highlightedApp = notification ? notification.app : null;
+
+    // Background
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(UI_PALETTE.bg),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    // Tablet Frame
+    const tabW = 600;
+    const tabH = 400;
+    const tabX = width() / 2;
+    const tabY = height() / 2;
+
+    add([
+      rect(tabW, tabH, { radius: 24 }),
+      pos(tabX, tabY),
+      color(20, 20, 25),
+      anchor("center"),
+      z(Z.DEVICES),
+    ]);
+
+    // Screen
+    add([
+      rect(tabW - 40, tabH - 40, { radius: 8 }),
+      pos(tabX, tabY),
+      color(UI_PALETTE.bg),
+      anchor("center"),
+      z(Z.DEVICES),
+    ]);
+
+    // Dock at bottom
+    add([
+      rect(tabW - 80, 80, { radius: 16 }),
+      pos(tabX, tabY + tabH / 2 - 60),
+      color(255, 255, 255),
+      opacity(0.2),
+      anchor("center"),
+      z(Z.UI_BASE),
+    ]);
+
+    const dockApps = [
+      { id: "Mail", label: "Mail", xOff: -120, color: rgb(90, 160, 255) },
+      { id: "Messages", label: "Messages", xOff: 0, color: rgb(80, 200, 120) },
+      { id: "Phone", label: "Phone", xOff: 120, color: rgb(60, 200, 140) },
+    ];
+
+    dockApps.forEach((app) => {
+      const x = tabX + app.xOff;
+      const y = tabY + tabH / 2 - 60;
+
+      // Clickable area
+      add([
+        rect(64, 64, { radius: 12 }),
+        pos(x, y),
+        color(255, 255, 255),
+        opacity(0.0),
+        anchor("center"),
+        area(),
+        "tablet-app",
+        {
+          appId: app.id,
+        },
+        z(Z.UI_BASE + 1),
+      ]);
+
+      makeAppIcon(x, y, 56, app.color, app.id);
+
+      // Badge for highlighted app
+      if (highlightedApp === app.id) {
+        add([
+          circle(12),
+          pos(x + 24, y - 24),
+          color(255, 50, 50),
+          anchor("center"),
+          z(Z.UI_BASE + 5),
+        ]);
+        add([
+          text("1", { size: 14 }),
+          pos(x + 24, y - 24),
+          anchor("center"),
+          color(255, 255, 255),
+          z(Z.UI_BASE + 6),
+        ]);
+      }
+    });
+
+    let infoText = add([
+      text("Tap an app to open", { size: 20 }),
+      pos(tabX, tabY - 50),
+      anchor("center"),
+      color(UI_PALETTE.text),
+      z(Z.UI_BASE),
+    ]);
+
+    onClick("tablet-app", (icon) => {
+      playUiClickSfx();
+      if (icon.appId === highlightedApp) {
+        go("scenario", { scenario, sourceDevice: "tablet", sourceApp: icon.appId });
+      } else {
+        infoText.text = "No new messages in " + icon.appId;
+        wait(1.5, () => {
+           infoText.text = "Tap an app to open";
+        });
+      }
+    });
+
+    onKeyPress("escape", () => {
+      go("room");
+    });
+  });
+
+  // ------------ Scene 2: Generic Phishing Scenario UI ------------ //
+  scene("scenario", (data) => {
+    const scenario = data && data.scenario ? data.scenario : data;
+    const sourceDevice = data && data.sourceDevice ? data.sourceDevice : null;
+    const sourceApp = data && data.sourceApp ? data.sourceApp : null;
+
+    // Dark overlay background
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(0, 0, 0),
+      opacity(0.85),
+      fixed(),
+      z(Z.BG),
+    ]);
+
+    // Centered card panel
+    const cardW = width() * 0.8;
+    const cardH = height() * 0.8;
+    const cardX = width() / 2;
+    const cardY = height() / 2;
+
+    // Card Shadow
+    add([
+      rect(cardW, cardH, { radius: 16 }),
+      pos(cardX + 10, cardY + 10),
+      color(0, 0, 0),
+      opacity(0.5),
+      anchor("center"),
+      z(Z.MODAL - 1),
+    ]);
+
+    // Card Body
+    add([
+      rect(cardW, cardH, { radius: 16 }),
+      pos(cardX, cardY),
+      color(UI_PALETTE.bg),
+      outline(2, UI_PALETTE.highlight),
+      anchor("center"),
+      z(Z.MODAL),
+    ]);
+
+    // Header bar
+    add([
+      rect(cardW, 60, { radius: [16, 16, 0, 0] }),
+      pos(cardX, cardY - cardH / 2 + 30),
+      color(UI_PALETTE.primary),
+      anchor("center"),
+      z(Z.MODAL),
+    ]);
+
+    let header = scenario.title;
+    if (sourceApp) {
+      header += " (" + sourceApp + ")";
+    }
+
+    add([
+      text(header, { size: 24 }),
+      pos(cardX - cardW / 2 + 20, cardY - cardH / 2 + 30),
+      anchor("left"),
+      color(255, 255, 255),
+      z(Z.MODAL + 1),
+    ]);
+
+    // Sender line
+    add([
+      text("From: " + scenario.sender, { size: 20 }),
+      pos(cardX - cardW / 2 + 30, cardY - cardH / 2 + 90),
+      anchor("left"),
+      color(255, 200, 200),
+      z(Z.MODAL + 1),
+    ]);
+
+    // Message body
+    add([
+      text(scenario.messageLines.join("\n"), { size: 20, width: cardW * 0.6 }),
+      pos(cardX - cardW / 2 + 30, cardY - cardH / 2 + 130),
+      anchor("topleft"),
+      color(UI_PALETTE.text),
+      z(Z.MODAL + 1),
+    ]);
+
+    // Right-side hint block (Red Flags)
+    const hintW = cardW * 0.3;
+    const hintH = cardH * 0.4;
+    const hintX = cardX + cardW / 2 - hintW / 2 - 30;
+    const hintY = cardY - cardH / 2 + 130 + hintH / 2;
+
+    add([
+      rect(hintW, hintH, { radius: 8 }),
+      pos(hintX, hintY),
+      color(40, 40, 50),
+      outline(2, rgb(200, 100, 100)),
+      anchor("center"),
+      z(Z.MODAL + 1),
+    ]);
+
+    add([
+      text("RED FLAGS TO SPOT", { size: 16 }),
+      pos(hintX, hintY - hintH / 2 + 20),
+      anchor("center"),
+      color(255, 150, 150),
+      z(Z.MODAL + 2),
+    ]);
+
+    add([
+      text("- " + scenario.hintLines.join("\n\n- "), { size: 14, width: hintW - 20 }),
+      pos(hintX, hintY + 10),
+      anchor("center"),
+      color(220, 220, 220),
+      z(Z.MODAL + 2),
+    ]);
+
+    // Helper to create choice buttons
+    function makeChoiceButton(cfg) {
+      const btn = add([
+        rect(cfg.w, 60, { radius: 8 }),
+        pos(cfg.x, cfg.y),
+        color(cfg.bg),
+        outline(2, rgb(0, 0, 0)),
+        anchor("center"),
+        area(),
+        cfg.tag,
+        z(Z.MODAL + 1),
+      ]);
+      
+      add([
+        text(cfg.label, { size: 20 }),
+        pos(cfg.x, cfg.y),
+        anchor("center"),
+        color(0, 0, 0),
+        z(Z.MODAL + 2),
+      ]);
+      return btn;
+    }
+
+    const buttonY = cardY + cardH / 2 - 60;
+
+    // Risky choice (bad)
+    makeChoiceButton({
+      x: cardX - 160,
+      y: buttonY,
+      w: 280,
+      bg: rgb(255, 180, 180),
+      label: scenario.badChoiceLabel,
+      tag: "choice-bad",
+    });
+
+    // Safe choice (good)
+    makeChoiceButton({
+      x: cardX + 160,
+      y: buttonY,
+      w: 280,
+      bg: rgb(180, 255, 180),
+      label: scenario.goodChoiceLabel,
+      tag: "choice-good",
+    });
+
+    let footer = "Click a button to decide how to react.";
+    add([
+      text(footer, { size: 16 }),
+      pos(cardX, cardY + cardH / 2 + 30),
+      anchor("center"),
+      color(150, 150, 150),
+      z(Z.MODAL),
+    ]);
+
+    // Hover feedback
+    onHover("choice-bad", (b) => {
+      b.color = rgb(255, 210, 210);
+      b.scale = vec2(1.05);
+    }, (b) => {
+      b.color = rgb(255, 180, 180);
+      b.scale = vec2(1);
+    });
+
+    onHover("choice-good", (b) => {
+      b.color = rgb(210, 255, 210);
+      b.scale = vec2(1.05);
+    }, (b) => {
+      b.color = rgb(180, 255, 180);
+      b.scale = vec2(1);
+    });
+
+    // Click handlers -> outcome scenes with tailored explanations
+    onClick("choice-bad", () => {
+      if (sourceDevice) {
+        const dev = sourceDevice.toLowerCase();
+        if (notificationLogic.devices[dev]) {
+          delete notificationLogic.devices[dev];
+        }
+      }
+      playChoiceBadSfx();
+      go("bad-ending", { scenario, sourceDevice, sourceApp });
+    });
+
+    onClick("choice-good", () => {
+      if (sourceDevice) {
+        const dev = sourceDevice.toLowerCase();
+        if (notificationLogic.devices[dev]) {
+          delete notificationLogic.devices[dev];
+        }
+      }
+      playChoiceGoodSfx();
+      go("good-ending", { scenario, sourceDevice, sourceApp });
+    });
+  });
+
+  // ------------ Scene 3: Bad Ending (Educational Feedback) ------------ //
+  scene("bad-ending", (data) => {
+    const scenario = data && data.scenario ? data.scenario : null;
+    const sourceDevice = data && data.sourceDevice ? data.sourceDevice : null;
+    const sourceApp = data && data.sourceApp ? data.sourceApp : null;
+
+    addSceneFadeIn();
+    drawTopHud();
+
+    applyOutcomeToPlayerState(scenario, false);
+    playChoiceBadSfx();
+
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(120, 0, 24),
+      fixed(),
+      z(-10),
+    ]);
+
+    add([
+      text("YOU GOT HACKED!", { size: 42 }),
+      pos(width() / 2, height() / 2 - 80),
+      anchor("center"),
+      color(255, 220, 220),
+    ]);
+
+    const deviceLine = scenario
+      ? `Device: ${scenario.deviceName}`
+      : "A phishing attack succeeded.";
+
+    const beforeAllowance =
+      typeof playerState.allowance === "number" ? playerState.allowance : 100;
+
+    const explanation =
+      (scenario ? scenario.badExplanation : "You fell for a phishing trick.") +
+      "\n\n" +
+      deviceLine +
+      "\n\n" +
+      "Because of this mistake, part of your allowance was lost.";
+
+    add([
+      text(explanation, { size: 22 }),
+      pos(width() / 2, height() / 2),
+      anchor("center"),
+      color(255, 240, 240),
+    ]);
+
+    add([
+      text("ESC: Back to device/room   R: Restart room", { size: 20 }),
+      pos(width() / 2, height() - 80),
+      anchor("center"),
+      color(255, 255, 255),
+    ]);
+
+    function returnToContext() {
+      if (sourceDevice) {
+        const d = sourceDevice.toLowerCase();
+        let deviceId = null;
+        if (d === "phone") deviceId = "phone";
+        else if (d === "computer") deviceId = "computer";
+        else if (d === "tablet") deviceId = "tablet";
+
+        if (deviceId) {
+          const entryData = notificationLogic.devices[deviceId] || null;
+          const scenarioForDevice = entryData ? entryData.scenario : null;
+          const notification = entryData
+            ? { deviceId: entryData.deviceId, app: entryData.app, scenario: entryData.scenario }
+            : null;
+
+          if (deviceId === "phone") {
+            go("device-phone", { notification, scenario: scenarioForDevice });
+          } else if (deviceId === "computer") {
+            go("device-computer", { notification, scenario: scenarioForDevice });
+          } else if (deviceId === "tablet") {
+            go("device-tablet", { notification, scenario: scenarioForDevice });
+          }
+          return;
+        }
+      }
+      go("room");
+    }
+
+    onKeyPress("r", () => {
+      go("room");
+    });
+
+    onKeyPress("escape", () => {
+      returnToContext();
+    });
+  });
+
+  // ------------ Scene 4: Good Ending (Success Feedback) ------------ //
+  scene("good-ending", (data) => {
+    const scenario = data && data.scenario ? data.scenario : null;
+    const sourceDevice = data && data.sourceDevice ? data.sourceDevice : null;
+    const sourceApp = data && data.sourceApp ? data.sourceApp : null;
+
+    addSceneFadeIn();
+    drawTopHud();
+
+    applyOutcomeToPlayerState(scenario, true);
+    playChoiceGoodSfx();
+
+    add([
+      rect(width(), height()),
+      pos(0, 0),
+      color(0, 110, 40),
+      fixed(),
+      z(-10),
+    ]);
+
+    add([
+      text("SAFE!", { size: 42 }),
+      pos(width() / 2, height() / 2 - 80),
+      anchor("center"),
+      color(220, 255, 220),
+    ]);
+
+    const deviceLine = scenario
+      ? `Device: ${scenario.deviceName}`
+      : "You made a safe choice.";
+
+    const explanation =
+      (scenario ? scenario.goodExplanation : "You correctly identified the phishing risk.") +
+      "\n\n" +
+      deviceLine +
+      "\n\n" +
+      "Good choices help you keep your allowance safe.";
+
+    add([
+      text(explanation, { size: 22 }),
+      pos(width() / 2, height() / 2),
+      anchor("center"),
+      color(230, 255, 230),
+    ]);
+
+    add([
+      text("ESC: Back to device/room   R: Restart room", { size: 20 }),
+      pos(width() / 2, height() - 80),
+      anchor("center"),
+      color(255, 255, 255),
+    ]);
+
+    function returnToContext() {
+      if (sourceDevice) {
+        const d = sourceDevice.toLowerCase();
+        let deviceId = null;
+        if (d === "phone") deviceId = "phone";
+        else if (d === "computer") deviceId = "computer";
+        else if (d === "tablet") deviceId = "tablet";
+
+        if (deviceId) {
+          const entryData = notificationLogic.devices[deviceId] || null;
+          const scenarioForDevice = entryData ? entryData.scenario : null;
+          const notification = entryData
+            ? { deviceId: entryData.deviceId, app: entryData.app, scenario: entryData.scenario }
+            : null;
+
+          if (deviceId === "phone") {
+            go("device-phone", { notification, scenario: scenarioForDevice });
+          } else if (deviceId === "computer") {
+            go("device-computer", { notification, scenario: scenarioForDevice });
+          } else if (deviceId === "tablet") {
+            go("device-tablet", { notification, scenario: scenarioForDevice });
+          }
+          return;
+        }
+      }
+      go("room");
+    }
+
+    onKeyPress("r", () => {
+      go("room");
+    });
+
+    onKeyPress("escape", () => {
+      returnToContext();
+    });
+  });
+
+  // Start at the main menu
+  go("menu");
+</script>
+</body>
+</html>
